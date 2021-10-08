@@ -1,9 +1,6 @@
 use std::collections::HashMap;
 
-use openmetrics_parser::{
-    prometheus, HistogramBucket, HistogramValue, ParseError, PrometheusCounterValue,
-    PrometheusMetricFamily, PrometheusValue, Sample,
-};
+use openmetrics_parser::{HistogramBucket, HistogramValue, MetricsExposition, ParseError, PrometheusCounterValue, PrometheusMetricFamily, PrometheusValue, Sample, prometheus};
 use tokio::sync::Mutex;
 
 #[derive(Debug)]
@@ -145,6 +142,31 @@ pub struct Aggregator {
     families: Mutex<HashMap<String, AggregationFamily>>,
 }
 
+fn add_extra_labels<T, V>(mut exposition: MetricsExposition<T, V>, extra_labels: &HashMap<&str, &str>) -> MetricsExposition<T, V> {
+    for (_, metrics) in exposition.families.iter_mut() {
+        for (&label_name, &label_value) in extra_labels.iter() {
+            let index = match metrics.label_names.iter().position(|s| s == label_name) {
+                Some(position) => position,
+                None => {
+                    metrics.label_names.push(label_name.to_owned());
+                    metrics.label_names.len() - 1
+                },
+            };
+
+            for metric in metrics.metrics.iter_mut() {
+                if index == metric.label_values.len() {
+                    metric.label_values.push(label_value.to_owned());
+                }
+                else {
+                    metric.label_values[index] = label_value.to_owned();
+                }
+            }
+        }
+    }
+
+    return exposition;
+}
+
 impl Aggregator {
     pub fn new() -> Aggregator {
         return Aggregator {
@@ -152,8 +174,8 @@ impl Aggregator {
         };
     }
 
-    pub async fn parse_and_merge(&mut self, s: &str) -> Result<(), AggregationError> {
-        let metrics = prometheus::parse_prometheus(&s)?;
+    pub async fn parse_and_merge(&mut self, s: &str, extra_labels: &HashMap<&str, &str>) -> Result<(), AggregationError> {
+        let metrics = add_extra_labels(prometheus::parse_prometheus(&s)?, extra_labels);
         let mut families = self.families.lock().await;
 
         for (name, metrics) in metrics.families {

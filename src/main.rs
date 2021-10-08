@@ -1,25 +1,50 @@
+use std::net::ToSocketAddrs;
+
 use aggregator::Aggregator;
+use clap::{App, Arg};
+use slog::{Drain, error, info, o};
 
 mod aggregator;
+mod routes;
 
 #[tokio::main]
 async fn main() {
-    let mut agg = Aggregator::new();
-    agg.parse_and_merge("# HELP test test metric\ntest 1\n")
-        .await
-        .unwrap();
-    agg.parse_and_merge("# HELP test test metric\ntest 1\n")
-        .await
-        .unwrap();
-    agg.parse_and_merge("# HELP test test metric\ntest 1\n")
-        .await
-        .unwrap();
-    agg.parse_and_merge("# HELP test2 test metric\n# TYPE test2 gauge\ntest2 1\n")
-        .await
-        .unwrap();
-    agg.parse_and_merge("# HELP test2 test metric\n# TYPE test2 gauge\ntest2 1\n")
-        .await
-        .unwrap();
+    let agg = Aggregator::new();
 
-    println!("{:?}", agg);
+    let matches = App::new("notes-thing backend")
+        .arg(
+            Arg::with_name("listen")
+                .short("l")
+                .help("The address/port to listen on")
+                .takes_value(true)
+                .default_value("localhost:4278"),
+        )
+        .get_matches();
+
+    let drain = slog_async::Async::new(slog_json::Json::new(std::io::stdout())
+        .add_default_keys()
+        .build()
+        .fuse()).build().fuse();
+
+    let log = slog::Logger::root(drain, o!());
+
+    // Parse out the listen address
+    let address = matches.value_of("listen").unwrap();
+    let address: Vec<_> = match address.to_socket_addrs() {
+        Ok(addr) => addr.collect(),
+        Err(e) => {
+            error!(log, "Failed to parse socket address from {}: {}", address, e);
+            return;
+        }
+    };
+
+    info!(log, "Listening on: {:?}", address);
+
+    let routes = routes::get_routes(agg);
+
+    let futures = address
+        .into_iter()
+        .map(move |addr| warp::serve(routes.clone()).run(addr));
+
+    tokio::join!(futures::future::join_all(futures));
 }
