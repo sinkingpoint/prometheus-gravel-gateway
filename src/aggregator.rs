@@ -1,7 +1,7 @@
-use std::collections::HashMap;
+use std::{collections::HashMap, sync::Arc};
 
 use openmetrics_parser::{HistogramBucket, HistogramValue, MetricsExposition, ParseError, PrometheusCounterValue, PrometheusMetricFamily, PrometheusValue, Sample, prometheus};
-use tokio::sync::Mutex;
+use tokio::sync::RwLock;
 
 #[derive(Debug)]
 pub enum AggregationError {
@@ -87,7 +87,7 @@ fn merge_metric(into: &mut Sample<PrometheusValue>, merge: Sample<PrometheusValu
             PrometheusValue::Histogram(HistogramValue {
                 sum,
                 count,
-                timestamp: val2.timestamp,
+                created: val2.created,
                 buckets: merge_buckets(&val1.buckets, &val2.buckets),
             })
         }
@@ -137,9 +137,9 @@ impl AggregationFamily {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct Aggregator {
-    families: Mutex<HashMap<String, AggregationFamily>>,
+    families: Arc<RwLock<HashMap<String, AggregationFamily>>>,
 }
 
 fn add_extra_labels<T, V>(mut exposition: MetricsExposition<T, V>, extra_labels: &HashMap<&str, &str>) -> MetricsExposition<T, V> {
@@ -170,13 +170,13 @@ fn add_extra_labels<T, V>(mut exposition: MetricsExposition<T, V>, extra_labels:
 impl Aggregator {
     pub fn new() -> Aggregator {
         return Aggregator {
-            families: Mutex::new(HashMap::new()),
+            families: Arc::new(RwLock::new(HashMap::new())),
         };
     }
 
     pub async fn parse_and_merge(&mut self, s: &str, extra_labels: &HashMap<&str, &str>) -> Result<(), AggregationError> {
         let metrics = add_extra_labels(prometheus::parse_prometheus(&s)?, extra_labels);
-        let mut families = self.families.lock().await;
+        let mut families = self.families.write().await;
 
         for (name, metrics) in metrics.families {
             match families.get_mut(&name) {
@@ -190,5 +190,15 @@ impl Aggregator {
         }
 
         return Ok(());
+    }
+
+    pub async fn to_string(&self) -> String {
+        let families = self.families.read().await;
+        let mut base = String::new();
+        for (_, family) in families.iter() {
+            base.push_str(&format!("{}", family.base_family));
+        }
+
+        base
     }
 }
