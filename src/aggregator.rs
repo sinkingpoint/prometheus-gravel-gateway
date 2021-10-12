@@ -1,7 +1,9 @@
-use std::{collections::HashMap, sync::Arc};
+use std::{collections::HashMap, str::FromStr, sync::Arc};
 
-use openmetrics_parser::{HistogramBucket, HistogramValue, MetricsExposition, ParseError, PrometheusCounterValue, PrometheusMetricFamily, PrometheusValue, Sample, prometheus};
+use openmetrics_parser::{HistogramBucket, HistogramValue, MetricFamily, MetricsExposition, ParseError, PrometheusCounterValue, PrometheusMetricFamily, PrometheusValue, Sample, prometheus};
 use tokio::sync::RwLock;
+
+const CLEARMODE_LABEL_NAME: &str = "clearmode";
 
 #[derive(Debug)]
 pub enum AggregationError {
@@ -12,6 +14,39 @@ pub enum AggregationError {
 impl From<ParseError> for AggregationError {
     fn from(e: ParseError) -> Self {
         return AggregationError::ParseError(e);
+    }
+}
+
+fn remove_label(name: &str, label_names: &mut Vec<String>, label_values: &mut Vec<String>) -> Option<String> {
+    let index = match label_names.iter().position(|s| s == name) {
+        Some(s) => s,
+        None => return None
+    };
+
+    Some(label_values.remove(index))
+}
+
+#[derive(Debug, Clone)]
+enum ClearMode {
+    Aggregate,
+    Replace,
+    Family,
+    NonExistent,
+    OnScrape
+}
+
+impl FromStr for ClearMode {
+    type Err = AggregationError;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s {
+            "aggregate" => Ok(ClearMode::Aggregate),
+            "replace" => Ok(ClearMode::Replace),
+            "family" => Ok(ClearMode::Family),
+            "onscrape" => Ok(ClearMode::OnScrape),
+            "nonexistent" => Ok(ClearMode::NonExistent),
+            _ => Err(AggregationError::Error(format!("Invalid clearmode: {}", s)))
+        }
     }
 }
 
@@ -119,6 +154,7 @@ impl AggregationFamily {
         if new_family.label_names != self.base_family.label_names {}
 
         for metric in new_family.metrics {
+            let clearmode = remove_label(CLEARMODE_LABEL_NAME, &mut new_family.label_names, &mut metric.label_values);
             // TODO: This is really inefficient for large families. Should probably optimise it
             match self
                 .base_family
