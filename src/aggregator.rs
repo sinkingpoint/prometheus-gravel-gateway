@@ -1,6 +1,6 @@
 use std::{collections::HashMap, str::FromStr, sync::Arc};
 
-use openmetrics_parser::{HistogramBucket, HistogramValue, MetricFamily, MetricsExposition, ParseError, PrometheusCounterValue, PrometheusMetricFamily, PrometheusValue, Sample, prometheus};
+use openmetrics_parser::{HistogramBucket, HistogramValue, MetricsExposition, ParseError, PrometheusCounterValue, PrometheusMetricFamily, PrometheusValue, Sample, prometheus};
 use tokio::sync::RwLock;
 
 const CLEARMODE_LABEL_NAME: &str = "clearmode";
@@ -15,15 +15,6 @@ impl From<ParseError> for AggregationError {
     fn from(e: ParseError) -> Self {
         return AggregationError::ParseError(e);
     }
-}
-
-fn remove_label(name: &str, label_names: &mut Vec<String>, label_values: &mut Vec<String>) -> Option<String> {
-    let index = match label_names.iter().position(|s| s == name) {
-        Some(s) => s,
-        None => return None
-    };
-
-    Some(label_values.remove(index))
 }
 
 #[derive(Debug, Clone)]
@@ -137,10 +128,10 @@ impl AggregationFamily {
     }
 
     fn merge(&mut self, new_family: PrometheusMetricFamily) -> Result<(), AggregationError> {
-        if new_family.name != self.base_family.name {
+        if new_family.family_name != self.base_family.family_name {
             return Err(AggregationError::Error(format!(
                 "Invalid metric names - tried to merge {} with {}",
-                new_family.name, self.base_family.name
+                new_family.family_name, self.base_family.family_name
             )));
         }
 
@@ -151,18 +142,11 @@ impl AggregationFamily {
             )));
         }
 
-        if new_family.label_names != self.base_family.label_names {}
-
-        for metric in new_family.metrics {
-            let clearmode = remove_label(CLEARMODE_LABEL_NAME, &mut new_family.label_names, &mut metric.label_values);
+        for metric in new_family.into_iter_samples() {
             // TODO: This is really inefficient for large families. Should probably optimise it
-            match self
-                .base_family
-                .metrics
-                .iter_mut()
-                .find(|m| m.label_values == metric.label_values)
+            match self.base_family.get_sample_matches_mut(&metric)
             {
-                None => self.base_family.metrics.push(metric),
+                None => self.base_family.add_sample(metric).unwrap(),
                 Some(s) => {
                     merge_metric(s, metric);
                 }
@@ -181,22 +165,7 @@ pub struct Aggregator {
 fn add_extra_labels<T, V>(mut exposition: MetricsExposition<T, V>, extra_labels: &HashMap<&str, &str>) -> MetricsExposition<T, V> {
     for (_, metrics) in exposition.families.iter_mut() {
         for (&label_name, &label_value) in extra_labels.iter() {
-            let index = match metrics.label_names.iter().position(|s| s == label_name) {
-                Some(position) => position,
-                None => {
-                    metrics.label_names.push(label_name.to_owned());
-                    metrics.label_names.len() - 1
-                },
-            };
-
-            for metric in metrics.metrics.iter_mut() {
-                if index == metric.label_values.len() {
-                    metric.label_values.push(label_value.to_owned());
-                }
-                else {
-                    metric.label_values[index] = label_value.to_owned();
-                }
-            }
+            metrics.set_label(label_name, label_value);
         }
     }
 
