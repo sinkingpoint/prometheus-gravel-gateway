@@ -18,7 +18,7 @@ impl From<ParseError> for AggregationError {
 }
 
 #[derive(Debug, Clone, PartialEq)]
-enum ClearMode {
+pub enum ClearMode {
     Aggregate,
     Replace,
     Family,
@@ -95,7 +95,7 @@ fn merge_buckets(val1: &Vec<HistogramBucket>, val2: &Vec<HistogramBucket>) -> Ve
     return output;
 }
 
-fn merge_metric(into: &mut Sample<PrometheusValue>, merge: Sample<PrometheusValue>, clear_mode: ClearMode) {
+pub fn merge_metric(into: &mut Sample<PrometheusValue>, merge: Sample<PrometheusValue>, clear_mode: ClearMode) {
     into.value = match (&into.value, &merge.value) {
         (PrometheusValue::Unknown(val1), PrometheusValue::Unknown(val2)) => {
             match clear_mode {

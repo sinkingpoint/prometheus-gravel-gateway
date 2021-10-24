@@ -7,6 +7,9 @@ use slog::{Drain, error, info, o};
 mod aggregator;
 mod routes;
 
+#[cfg(test)]
+mod aggregator_test;
+
 #[tokio::main]
 async fn main() {
     let agg = Aggregator::new();
