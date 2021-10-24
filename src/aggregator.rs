@@ -157,6 +157,7 @@ pub fn merge_metric(into: &mut Sample<PrometheusValue>, merge: Sample<Prometheus
 
 impl AggregationFamily {
     fn new(base_family: PrometheusMetricFamily) -> Self {
+        let base_family = base_family.without_label(CLEARMODE_LABEL_NAME).unwrap_or(base_family);
         Self { base_family }
     }
 
@@ -180,16 +181,16 @@ impl AggregationFamily {
         });
 
         if should_clear_family {
-            self.base_family = new_family;
+            self.base_family = new_family.without_label(CLEARMODE_LABEL_NAME).unwrap_or(new_family);
         }
         else {
             let family_type = self.base_family.family_type.clone();
             for metric in new_family.into_iter_samples() {
                 // TODO: This is really inefficient for large families. Should probably optimise it
-                // Go uses "label fingerprinting" to generate hashes of labelsets. 
+                // Go uses "label fingerprinting" to generate hashes of labelsets.
                 match self.base_family.get_sample_matches_mut(&metric)
                 {
-                    None => self.base_family.add_sample(metric).unwrap(),
+                    None => self.base_family.add_sample(metric)?,
                     Some(s) => {
                         let clear_mode = ClearMode::from_family(&family_type, &metric);
                         merge_metric(s, metric, clear_mode);

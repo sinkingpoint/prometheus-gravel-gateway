@@ -348,7 +348,7 @@ version = "0.1.0"
 dependencies = [
  "clap",
  "futures",
- "openmetrics_parser",
+ "openmetrics-parser",
  "serde",
  "serde_json",
  "slog",
@@ -681,9 +681,10 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "624a8340c38c1b80fd549087862da4ba43e08858af025b236e509b6649fc13d5"
 
 [[package]]
-name = "openmetrics_parser"
+name = "openmetrics-parser"
 version = "0.1.0"
-source = "git+https://github.com/sinkingpoint/openmetrics-parser.git#49ae0eac22eb65e0c1d3d9c294cb2d8f9ea09a0e"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "6d2af1f0e0f6458169fa2c4602e270711fe2421ab4256bfeb1a24a34c19d8435"
 dependencies = [
  "auto_ops",
  "pest",
