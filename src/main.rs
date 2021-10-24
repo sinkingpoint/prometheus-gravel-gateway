@@ -14,15 +14,32 @@ mod aggregator_test;
 async fn main() {
     let agg = Aggregator::new();
 
-    let matches = App::new("notes-thing backend")
+    let app = App::new("notes-thing backend")
         .arg(
             Arg::with_name("listen")
                 .short("l")
                 .help("The address/port to listen on")
                 .takes_value(true)
                 .default_value("localhost:4278"),
-        )
-        .get_matches();
+        );
+
+    #[cfg(feature="tls")]
+    let app = app.arg(
+        Arg::with_name("tls-key")
+            .long("tls-key")
+            .help("The private key file to use with TLS")
+            .requires("tls-cert")
+            .takes_value(true)
+    )
+    .arg(
+        Arg::with_name("tls-cert")
+            .long("tls-cert")
+            .help("The certificate file to use with TLS")
+            .requires("tls-key")
+            .takes_value(true)
+    );
+    
+    let matches = app.get_matches();
 
     let drain = slog_async::Async::new(slog_json::Json::new(std::io::stdout())
         .add_default_keys()
@@ -45,9 +62,23 @@ async fn main() {
 
     let routes = routes::get_routes(agg);
 
-    let futures = address
-        .into_iter()
-        .map(move |addr| warp::serve(routes.clone()).run(addr));
+    #[cfg(feature="tls")]
+    if let Some(tls_key) = matches.value_of("tls-key") {
+        // Clap ensures that if one of these exists, so does the other
+        let tls_cert = matches.value_of("tls-cert").unwrap();
+        tokio::join!(futures::future::join_all(address
+            .into_iter()
+            .map(move |addr| warp::serve(routes.clone()).tls().key_path(tls_key).cert_path(tls_cert).run(addr))));
+    }
+    else {
+        tokio::join!(futures::future::join_all(address
+            .into_iter()
+            .map(move |addr| warp::serve(routes.clone()).run(addr))));
+    };
 
-    tokio::join!(futures::future::join_all(futures));
+    // If we don't have TLS support, just bind without it
+    #[cfg(not(feature="tls"))]
+    tokio::join!(futures::future::join_all(address
+        .into_iter()
+        .map(move |addr| warp::serve(routes.clone()).run(addr))));
 }
