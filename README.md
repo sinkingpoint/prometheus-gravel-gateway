@@ -1,6 +1,6 @@
 # Gravel Gateway
 
-Gravel Gateway is a Prometheus Push Gateway for FAAS applications. In particular it allows aggregation to be controlled by the incoming metrics, and thus provides much more flexibility in the semantics that your metrics can follow. In general, the Gravel Gateway functions as a standard aggregating push gateway - by default, everything expect Gauges are `sum`ed, so e.g. if you push 
+Gravel Gateway is a Prometheus Push Gateway for FAAS applications. In particular it allows aggregation to be controlled by the incoming metrics, and thus provides much more flexibility in the semantics that your metrics can follow. In general, the Gravel Gateway functions as a standard aggregating push gateway - by default, everything except Gauges are `sum`ed, so e.g. if you push 
 
 ```
 # TYPE value_total counter
@@ -24,7 +24,7 @@ We currently support three different values of `clearmode` - `aggregate` (the de
 
 ```
 # TYPE value_total counter
-value_total{clearmode="replace"} 1
+value_total 1
 # TYPE value2 gauge
 value2{clearmode="aggregate"} 1
 # TYPE version gauge
@@ -35,7 +35,7 @@ and then
 
 ```
 # TYPE value_total counter
-value_total{clearmode="replace"} 3
+value_total 3
 # TYPE value2 gauge
 value2{clearmode="aggregate"} 1
 # TYPE version gauge
@@ -50,7 +50,7 @@ version{version="0.0.2"} 1
 # TYPE value2 gauge
 value2 2
 # TYPE value_total counter
-value_total 3
+value_total 4
 ```
 
 With the counter value being replaced, the gauge value being sumed, and the version value completly replacing the old version. You'll auso note that the clearmode label is removed by the gateway - it's not included in the metrics exposed to the Prometheus scrape. In that way, this aggregating process is completly transparent to the Prometheus.
