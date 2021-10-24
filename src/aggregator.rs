@@ -241,11 +241,11 @@ impl Aggregator {
 
     pub async fn to_string(&self) -> String {
         let families = self.families.read().await;
-        let mut base = String::new();
+        let mut family_strings = Vec::new();
         for (_, family) in families.iter() {
-            base.push_str(&format!("{}", family.base_family));
+            family_strings.push(format!("{}", family.base_family));
         }
 
-        base
+        family_strings.join("\n")
     }
 }

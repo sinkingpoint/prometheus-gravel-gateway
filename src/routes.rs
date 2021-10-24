@@ -1,6 +1,6 @@
 use std::{collections::HashMap};
 
-use warp::{Filter, hyper::body::Bytes, path::Tail, reject::Reject};
+use warp::{Filter, http::HeaderValue, hyper::{HeaderMap, body::Bytes}, path::Tail, reject::Reject};
 
 use crate::aggregator::{AggregationError, Aggregator};
 
@@ -20,10 +20,14 @@ pub fn get_routes(aggregator: Aggregator) -> impl Filter<Extract = impl warp::Re
         .and(with_aggregator(aggregator.clone()))
         .and_then(ingest_metrics);
 
+    let mut get_metrics_headers = HeaderMap::new();
+    get_metrics_headers.insert("Content-Type", HeaderValue::from_static("text/plain; version=0.0.4"));
+
     let get_metrics_path = warp::path!("metrics")
         .and(warp::get())
         .and(with_aggregator(aggregator.clone()))
-        .and_then(get_metrics);
+        .and_then(get_metrics)
+        .with(warp::reply::with::headers(get_metrics_headers));
 
     return push_metrics_path.or(get_metrics_path);
 }
