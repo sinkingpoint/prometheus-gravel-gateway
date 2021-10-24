@@ -1,5 +1,7 @@
 # Gravel Gateway
 
+![Crates.io](https://img.shields.io/crates/v/gravel-gateway?style=flat-square)
+
 Gravel Gateway is a Prometheus Push Gateway for FAAS applications. In particular it allows aggregation to be controlled by the incoming metrics, and thus provides much more flexibility in the semantics that your metrics can follow. In general, the Gravel Gateway functions as a standard aggregating push gateway - by default, everything except Gauges are `sum`ed, so e.g. if you push 
 
 ```
