@@ -38,6 +38,9 @@ fn with_aggregator(
     warp::any().map(move || agg.clone())
 }
 
+/// The routes for POST /metrics requests - takes a Prometheus exposition format
+/// and merges it into the existing metrics. Also supports push gateway syntax - /metrics/job/foo
+/// adds a job="foo" label to all the metrics
 async fn ingest_metrics(
     data: Bytes,
     tail: Tail,
