@@ -188,9 +188,12 @@ impl AggregationFamily {
             for metric in new_family.into_iter_samples() {
                 // TODO: This is really inefficient for large families. Should probably optimise it
                 // Go uses "label fingerprinting" to generate hashes of labelsets.
-                match self.base_family.get_sample_matches_mut(&metric)
+                let cmp_metric = metric.without_label(CLEARMODE_LABEL_NAME).unwrap_or(metric.clone());
+                match self.base_family.get_sample_matches_mut(&cmp_metric)
                 {
-                    None => self.base_family.add_sample(metric)?,
+                    None => {
+                        self.base_family.add_sample(metric)?
+                    },
                     Some(s) => {
                         let clear_mode = ClearMode::from_family(&family_type, &metric);
                         merge_metric(s, metric, clear_mode);
@@ -241,11 +244,11 @@ impl Aggregator {
 
     pub async fn to_string(&self) -> String {
         let families = self.families.read().await;
-        let mut family_strings = Vec::new();
+        let mut family_strings = String::new();
         for (_, family) in families.iter() {
-            family_strings.push(format!("{}", family.base_family));
+            family_strings.push_str(&family.base_family.to_string());
         }
 
-        family_strings.join("\n")
+        family_strings
     }
 }
