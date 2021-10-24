@@ -17,12 +17,11 @@ impl From<ParseError> for AggregationError {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 enum ClearMode {
     Aggregate,
     Replace,
     Family,
-    NonExistent
 }
 
 impl ClearMode {
@@ -30,6 +29,13 @@ impl ClearMode {
         match t {
             PrometheusType::Counter | PrometheusType::Unknown | PrometheusType::Histogram | PrometheusType::Summary => ClearMode::Aggregate,
             PrometheusType::Gauge => ClearMode::Replace,
+        }
+    }
+
+    fn from_family(family_type: &PrometheusType, metric: &Sample<PrometheusValue>) -> ClearMode {
+        match metric.get_labelset().unwrap().get_label_value(CLEARMODE_LABEL_NAME) {
+            Some(c) => ClearMode::from_str(c).unwrap_or(ClearMode::default_for_type(family_type)),
+            None => ClearMode::default_for_type(family_type)
         }
     }
 }
@@ -42,7 +48,6 @@ impl FromStr for ClearMode {
             "aggregate" => Ok(ClearMode::Aggregate),
             "replace" => Ok(ClearMode::Replace),
             "family" => Ok(ClearMode::Family),
-            "nonexistent" => Ok(ClearMode::NonExistent),
             _ => Err(AggregationError::Error(format!("Invalid clearmode: {}", s)))
         }
     }
@@ -170,22 +175,29 @@ impl AggregationFamily {
             )));
         }
 
-        for metric in new_family.into_iter_samples() {
-            let default = ClearMode::default_for_type(&self.base_family.family_type);
-            // TODO: This is really inefficient for large families. Should probably optimise it
-            match self.base_family.get_sample_matches_mut(&metric)
-            {
-                None => self.base_family.add_sample(metric).unwrap(),
-                Some(s) => {
-                    let clear_mode = match metric.get_labelset().unwrap().get_label_value(CLEARMODE_LABEL_NAME) {
-                        Some(c) => ClearMode::from_str(c).unwrap_or(default),
-                        None => default
-                    };
-                    merge_metric(s, metric, clear_mode);
+        let should_clear_family = new_family.iter_samples().any(|metric| {
+            ClearMode::from_family(&new_family.family_type, metric) == ClearMode::Family
+        });
+
+        if should_clear_family {
+            self.base_family = new_family;
+        }
+        else {
+            let family_type = self.base_family.family_type.clone();
+            for metric in new_family.into_iter_samples() {
+                // TODO: This is really inefficient for large families. Should probably optimise it
+                // Go uses "label fingerprinting" to generate hashes of labelsets. 
+                match self.base_family.get_sample_matches_mut(&metric)
+                {
+                    None => self.base_family.add_sample(metric).unwrap(),
+                    Some(s) => {
+                        let clear_mode = ClearMode::from_family(&family_type, &metric);
+                        merge_metric(s, metric, clear_mode);
+                    }
                 }
             }
         }
-
+        
         return Ok(());
     }
 }
