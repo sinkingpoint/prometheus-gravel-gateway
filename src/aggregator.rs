@@ -1,6 +1,6 @@
 use std::{collections::HashMap, str::FromStr, sync::Arc};
 
-use openmetrics_parser::{HistogramBucket, HistogramValue, MetricsExposition, ParseError, PrometheusCounterValue, PrometheusMetricFamily, PrometheusValue, Sample, prometheus};
+use openmetrics_parser::{HistogramBucket, HistogramValue, MetricsExposition, ParseError, PrometheusCounterValue, PrometheusMetricFamily, PrometheusType, PrometheusValue, Sample, prometheus};
 use tokio::sync::RwLock;
 
 const CLEARMODE_LABEL_NAME: &str = "clearmode";
@@ -22,8 +22,16 @@ enum ClearMode {
     Aggregate,
     Replace,
     Family,
-    NonExistent,
-    OnScrape
+    NonExistent
+}
+
+impl ClearMode {
+    fn default_for_type(t: &PrometheusType) -> ClearMode {
+        match t {
+            PrometheusType::Counter | PrometheusType::Unknown | PrometheusType::Histogram | PrometheusType::Summary => ClearMode::Aggregate,
+            PrometheusType::Gauge => ClearMode::Replace,
+        }
+    }
 }
 
 impl FromStr for ClearMode {
@@ -34,7 +42,6 @@ impl FromStr for ClearMode {
             "aggregate" => Ok(ClearMode::Aggregate),
             "replace" => Ok(ClearMode::Replace),
             "family" => Ok(ClearMode::Family),
-            "onscrape" => Ok(ClearMode::OnScrape),
             "nonexistent" => Ok(ClearMode::NonExistent),
             _ => Err(AggregationError::Error(format!("Invalid clearmode: {}", s)))
         }
@@ -83,38 +90,59 @@ fn merge_buckets(val1: &Vec<HistogramBucket>, val2: &Vec<HistogramBucket>) -> Ve
     return output;
 }
 
-fn merge_metric(into: &mut Sample<PrometheusValue>, merge: Sample<PrometheusValue>) {
+fn merge_metric(into: &mut Sample<PrometheusValue>, merge: Sample<PrometheusValue>, clear_mode: ClearMode) {
     into.value = match (&into.value, &merge.value) {
         (PrometheusValue::Unknown(val1), PrometheusValue::Unknown(val2)) => {
-            PrometheusValue::Unknown(val1 + val2)
+            match clear_mode {
+                ClearMode::Aggregate => PrometheusValue::Unknown(val1 + val2),
+                ClearMode::Replace => PrometheusValue::Unknown(*val2),
+                _ => unreachable!()
+            }
         }
-        (PrometheusValue::Gauge(_), PrometheusValue::Gauge(val2)) => {
-            PrometheusValue::Gauge(val2.clone())
+        (PrometheusValue::Gauge(val1), PrometheusValue::Gauge(val2)) => {
+            match clear_mode {
+                ClearMode::Aggregate => PrometheusValue::Gauge(val1 + val2),
+                ClearMode::Replace => PrometheusValue::Gauge(*val2),
+                _ => unreachable!()
+            }
         }
         (PrometheusValue::Counter(val1), PrometheusValue::Counter(val2)) => {
-            PrometheusValue::Counter(PrometheusCounterValue {
-                value: val1.value + val2.value,
-                exemplar: val2.exemplar.clone(),
-            })
+            match clear_mode {
+                ClearMode::Aggregate => PrometheusValue::Counter(PrometheusCounterValue {
+                    value: val1.value + val2.value,
+                    exemplar: val2.exemplar.clone(),
+                }),
+                ClearMode::Replace => PrometheusValue::Counter(PrometheusCounterValue {
+                    value: val2.value,
+                    exemplar: val2.exemplar.clone(),
+                }),
+                _ => unreachable!()
+            }
         }
         (PrometheusValue::Histogram(val1), PrometheusValue::Histogram(val2)) => {
-            let sum = match (val1.sum, val2.sum) {
-                (None, None) => None,
-                (None, Some(a)) | (Some(a), None) => Some(a),
-                (Some(a), Some(b)) => Some(&a + &b),
+            let sum = match (val1.sum, val2.sum, &clear_mode) {
+                (Some(a), Some(b), ClearMode::Aggregate) => Some(a + b),
+                (Some(_), Some(b), ClearMode::Replace) => Some(b),
+                _ => None,
             };
 
-            let count = match (val1.count, val2.count) {
-                (None, None) => None,
-                (None, Some(a)) | (Some(a), None) => Some(a),
-                (Some(a), Some(b)) => Some(a + b),
+            let count = match (val1.count, val2.count, &clear_mode) {
+                (Some(a), Some(b), ClearMode::Aggregate) => Some(a + b),
+                (Some(_), Some(b), ClearMode::Replace) => Some(b),
+                _ => None,
+            };
+
+            let buckets = match clear_mode {
+                ClearMode::Aggregate => merge_buckets(&val1.buckets, &val2.buckets),
+                ClearMode::Replace => val2.buckets.clone(),
+                _ => unreachable!()
             };
 
             PrometheusValue::Histogram(HistogramValue {
                 sum,
                 count,
                 created: val2.created,
-                buckets: merge_buckets(&val1.buckets, &val2.buckets),
+                buckets,
             })
         }
         (PrometheusValue::Summary(_), PrometheusValue::Summary(_)) => todo!(),
@@ -143,12 +171,17 @@ impl AggregationFamily {
         }
 
         for metric in new_family.into_iter_samples() {
+            let default = ClearMode::default_for_type(&self.base_family.family_type);
             // TODO: This is really inefficient for large families. Should probably optimise it
             match self.base_family.get_sample_matches_mut(&metric)
             {
                 None => self.base_family.add_sample(metric).unwrap(),
                 Some(s) => {
-                    merge_metric(s, metric);
+                    let clear_mode = match metric.get_labelset().unwrap().get_label_value(CLEARMODE_LABEL_NAME) {
+                        Some(c) => ClearMode::from_str(c).unwrap_or(default),
+                        None => default
+                    };
+                    merge_metric(s, metric, clear_mode);
                 }
             }
         }
@@ -162,14 +195,10 @@ pub struct Aggregator {
     families: Arc<RwLock<HashMap<String, AggregationFamily>>>,
 }
 
-fn add_extra_labels<T, V>(mut exposition: MetricsExposition<T, V>, extra_labels: &HashMap<&str, &str>) -> MetricsExposition<T, V> {
-    for (_, metrics) in exposition.families.iter_mut() {
-        for (&label_name, &label_value) in extra_labels.iter() {
-            metrics.set_label(label_name, label_value);
-        }
-    }
+fn add_extra_labels(mut exposition: MetricsExposition<PrometheusType, PrometheusValue>, extra_labels: &HashMap<&str, &str>) -> Result<MetricsExposition<PrometheusType, PrometheusValue>, ParseError> {
+    exposition.families = exposition.families.into_iter().map(|(name, family)| (name, family.with_labels(extra_labels.iter().map(|(&k, &v)| (k, v))))).collect();
 
-    return exposition;
+    return Ok(exposition);
 }
 
 impl Aggregator {
@@ -180,7 +209,7 @@ impl Aggregator {
     }
 
     pub async fn parse_and_merge(&mut self, s: &str, extra_labels: &HashMap<&str, &str>) -> Result<(), AggregationError> {
-        let metrics = add_extra_labels(prometheus::parse_prometheus(&s)?, extra_labels);
+        let metrics = add_extra_labels(prometheus::parse_prometheus(&s)?, extra_labels)?;
         let mut families = self.families.write().await;
 
         for (name, metrics) in metrics.families {
