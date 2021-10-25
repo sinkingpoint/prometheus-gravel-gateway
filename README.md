@@ -57,6 +57,93 @@ value_total 4
 
 With the counter value being replaced, the gauge value being sumed, and the version value completly replacing the old version. You'll auso note that the clearmode label is removed by the gateway - it's not included in the metrics exposed to the Prometheus scrape. In that way, this aggregating process is completly transparent to the Prometheus.
 
+## Usage
+
+```
+Prometheus Gravel Gateway 
+
+USAGE:
+    gravel-gateway [OPTIONS]
+
+FLAGS:
+    -h, --help       
+            Prints help information
+
+    -V, --version    
+            Prints version information
+
+
+OPTIONS:
+        --basic-auth-file <basic-auth-file>    
+            The file to use for basic authentication validation.
+                            This should be a path to a file of bcrypt hashes, one per line,
+                            with each line being an allowed hash.
+    -l <listen>                                
+            The address/port to listen on [default: localhost:4278]
+
+        --tls-cert <tls-cert>                  
+            The certificate file to use with TLS
+
+        --tls-key <tls-key>                    
+            The private key file to use with TLS
+```
+
+To use, run the gateway:
+
+```
+gravel-gateway
+```
+
+You can then make POSTs to /metrics to push metrics:
+
+```bash
+echo '# TYPE value_total counter
+value_total{clearmode="replace"} 3
+# TYPE value2 gauge
+value2{clearmode="aggregate"} 1
+# TYPE version gauge
+version{version="0.0.2",clearmode="family"} 1' | curl --data-binary @- localhost:4278/metrics
+```
+
+And point Prometheus at it to scrape:
+
+```
+global:
+  scrape_interval: 15s
+  evaluation_interval: 30s
+scrape_configs:
+  - job_name: prometheus
+    honor_labels: true
+    static_configs:
+      - targets: ["127.0.0.1:4278"]
+```
+
+### Authentication
+
+Gravel Gateway supports (pseudo) Basic autentication (with the auth feature). To use, populate a file with bcrypt hashes, 1 per line, e.g.
+
+```bash
+htpasswd -bnBC 10 "" supersecrets | tr -d ':\n' > passwords
+```
+
+and then start gravel-gateway pointing to that file:
+
+```bash
+gravel-gateway --basic-auth-file ./passwords
+```
+
+Requests to the POST /metrics endpoint will then be rejected unless they contain a valid `Authorization` header:
+
+```
+curl http://localhost:4278/metrics -vvv --data-binary @metrics.txt -H "Authorization: Basic supersecrets"
+```
+
+You'll note that we don't base64 the authorization header, so it's not _technically_ Basic Auth, but I don't like Base64ing it because I believe that gives a false sense of security. Instead, you should enable TLS
+
+### TLS
+
+TLS is provided by the `tls-key` and `tls-cert` args. Both are required to start a TLS server, and represent the private key, and the certificate that is presented respectivly.
+
 ## Motivation
 I [recently wrote](https://blog.sinkingpoint.com/posts/prometheus-for-faas/) about my frustrations with trying to orchestrate Prometheus in an FAAS (Functions-As-A-Service) system that will rename nameless.
 My key frustration was that the number of semantics I was trying to extract from my Prometheus metrics was too much for the limited amount of data you can 

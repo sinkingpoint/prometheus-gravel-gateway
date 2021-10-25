@@ -17,7 +17,7 @@ mod auth;
 async fn main() {
     let agg = Aggregator::new();
 
-    let app = App::new("notes-thing backend")
+    let app = App::new("Prometheus Gravel Gateway")
         .arg(
             Arg::with_name("listen")
                 .short("l")
