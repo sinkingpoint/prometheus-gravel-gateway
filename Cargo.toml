@@ -22,7 +22,9 @@ slog = "2.7.0"
 slog-async = "2.6.0"
 slog-json = "2.3.0"
 futures = "0.3.7"
+bcrypt = {optional = true, version = "0.10"}
 
 [features]
-default = ["tls"]
+default = ["tls", "auth"]
 tls = ["warp/tls"]
+auth = ["bcrypt"]

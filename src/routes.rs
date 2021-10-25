@@ -1,20 +1,35 @@
-use std::{collections::HashMap};
+use std::{collections::HashMap, sync::Arc};
 
 use warp::{Filter, http::HeaderValue, hyper::{HeaderMap, body::Bytes}, path::Tail, reject::Reject};
 
-use crate::aggregator::{AggregationError, Aggregator};
+use crate::{aggregator::{AggregationError, Aggregator}, auth::Authenticator};
 
 #[derive(Debug)]
 enum GravelError {
     Error(String),
+    AuthError,
     AggregationError(AggregationError)
 }
 
 impl Reject for GravelError {}
 
-pub fn get_routes(aggregator: Aggregator) -> impl Filter<Extract = impl warp::Reply, Error = warp::Rejection> + Clone {
+pub struct RoutesConfig {
+    pub authenticator: Box<dyn Authenticator + Send + Sync>
+}
+
+async fn auth(config: Arc<RoutesConfig>, header: String) -> Result<(), warp::Rejection> {
+    if config.authenticator.authenticate(&header) {
+        return Ok(());
+    }
+
+    return Err(warp::reject::custom(GravelError::AuthError));
+}
+
+pub fn get_routes(aggregator: Aggregator, config: RoutesConfig) -> impl Filter<Extract = impl warp::Reply, Error = warp::Rejection> + Clone {
+    let config = Arc::new(config);
     let push_metrics_path = warp::path("metrics")
         .and(warp::post())
+        .and(warp::header::<String>("authorization").and_then(move |header| auth(config.clone(), header)).untuple_one())
         .and(warp::filters::body::bytes())
         .and(warp::path::tail())
         .and(with_aggregator(aggregator.clone()))

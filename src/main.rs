@@ -1,14 +1,17 @@
-use std::net::ToSocketAddrs;
+use std::{net::ToSocketAddrs, path::PathBuf};
 
 use aggregator::Aggregator;
 use clap::{App, Arg};
 use slog::{Drain, error, info, o};
+
+use crate::{auth::pass_through_auth, routes::RoutesConfig};
 
 mod aggregator;
 mod routes;
 
 #[cfg(test)]
 mod aggregator_test;
+mod auth;
 
 #[tokio::main]
 async fn main() {
@@ -38,6 +41,19 @@ async fn main() {
             .requires("tls-key")
             .takes_value(true)
     );
+
+    #[cfg(feature="auth")]
+    let app = app.arg(
+        Arg::with_name("basic-auth-file")
+            .long("basic-auth-file")
+            .help("The file to use for basic authentication validation")
+            .long_help(
+                "The file to use for basic authentication validation.
+                This should be a path to a file of bcrypt hashes, one per line,
+                with each line being an allowed hash."
+            )
+            .takes_value(true)
+    );
     
     let matches = app.get_matches();
 
@@ -60,7 +76,27 @@ async fn main() {
 
     info!(log, "Listening on: {:?}", address);
 
-    let routes = routes::get_routes(agg);
+    let mut config = RoutesConfig{
+        authenticator: Box::new(pass_through_auth())
+    };
+
+    #[cfg(feature = "auth")]
+    {
+        use auth::basic_auth;
+        if let Some(path) = matches.value_of("basic-auth-file") {
+            config = match basic_auth(PathBuf::from(path)) {
+                Ok(authenticator) => RoutesConfig {
+                    authenticator: Box::new(authenticator)
+                },
+                Err(e) => {
+                    error!(log, "Failed to load basic auth file ({}) - {}", path, e);
+                    return;
+                }
+            };
+        };
+    }
+    
+    let routes = routes::get_routes(agg, config);
 
     #[cfg(feature="tls")]
     if let Some(tls_key) = matches.value_of("tls-key") {
