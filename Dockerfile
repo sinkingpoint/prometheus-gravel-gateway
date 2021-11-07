@@ -21,7 +21,7 @@ RUN apk add --no-cache ca-certificates tzdata
 
 WORKDIR ${APP}
 
-COPY --from=builder ${APP}/target/x86_64-unknown-linux-musl/release .
+COPY --from=builder ${APP}/target/x86_64-unknown-linux-musl/release/gravel-gateway .
 
 RUN chown -R $APP_USER:$APP_USER ${APP}
 
@@ -30,4 +30,3 @@ USER $APP_USER
 EXPOSE 4278
 
 ENTRYPOINT [ "./gravel-gateway", "-l", "0.0.0.0:4278" ]
-
