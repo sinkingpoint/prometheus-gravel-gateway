@@ -17,8 +17,7 @@ ENV TZ=Etc/UTC \
 RUN addgroup -S $APP_USER \
     && adduser -S -g $APP_USER $APP_USER
 
-RUN apk add --no-cache ca-certificates tzdata \
-    && rm -rf /var/cache/apk/*
+RUN apk add --no-cache ca-certificates tzdata
 
 WORKDIR ${APP}
 
