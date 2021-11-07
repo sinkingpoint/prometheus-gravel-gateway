@@ -31,5 +31,5 @@ EXPOSE 4278
 
 ENTRYPOINT [ "./gravel-gateway", "-l", "0.0.0.0:4278" ]
 
-HEALTHCHECK --interval=5m --timeout=3s \
+HEALTHCHECK --interval=30s --timeout=3s \
   CMD wget --spider localhost:4278/metrics
