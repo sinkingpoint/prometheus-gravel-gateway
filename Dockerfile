@@ -6,9 +6,6 @@ COPY . .
 
 RUN cargo install --path .
 
-#RUN cargo build --release
-
-RUN ls -l 
 
 FROM alpine:latest as runner
 
@@ -20,8 +17,7 @@ ENV TZ=Etc/UTC \
 RUN addgroup -S $APP_USER \
     && adduser -S -g $APP_USER $APP_USER
 
-RUN apk update \
-    && apk add --no-cache ca-certificates tzdata \
+RUN apk add --no-cache ca-certificates tzdata \
     && rm -rf /var/cache/apk/*
 
 WORKDIR ${APP}
