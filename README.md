@@ -55,7 +55,7 @@ value2 2
 value_total 4
 ```
 
-With the counter value being replaced, the gauge value being sumed, and the version value completly replacing the old version. You'll auso note that the clearmode label is removed by the gateway - it's not included in the metrics exposed to the Prometheus scrape. In that way, this aggregating process is completly transparent to the Prometheus.
+With the counter value being replaced, the gauge value being sumed, and the version value completely replacing the old version. You'll also note that the clearmode label is removed by the gateway - it's not included in the metrics exposed to the Prometheus scrape. In that way, this aggregating process is completely transparent to Prometheus.
 
 ## Usage
 
@@ -120,7 +120,7 @@ scrape_configs:
 
 ### Authentication
 
-Gravel Gateway supports (pseudo) Basic autentication (with the auth feature). To use, populate a file with bcrypt hashes, 1 per line, e.g.
+Gravel Gateway supports (pseudo) Basic authentication (with the auth feature). To use, populate a file with bcrypt hashes, 1 per line, e.g.
 
 ```bash
 htpasswd -bnBC 10 "" supersecrets | tr -d ':\n' > passwords
@@ -142,7 +142,7 @@ You'll note that we don't base64 the authorization header, so it's not _technica
 
 ### TLS
 
-TLS is provided by the `tls-key` and `tls-cert` args. Both are required to start a TLS server, and represent the private key, and the certificate that is presented respectivly.
+TLS is provided by the `tls-key` and `tls-cert` args. Both are required to start a TLS server, and represent the private key, and the certificate that is presented respectively.
 
 ## Motivation
 I [recently wrote](https://blog.sinkingpoint.com/posts/prometheus-for-faas/) about my frustrations with trying to orchestrate Prometheus in an FAAS (Functions-As-A-Service) system that will rename nameless.
