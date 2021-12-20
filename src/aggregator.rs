@@ -207,7 +207,7 @@ impl AggregationFamily {
                 {
                     None => {
                         // Just add the metric if its a new labelset
-                        self.base_family.add_sample(metric)?
+                        self.base_family.add_sample(cmp_metric)?
                     },
                     Some(s) => {
                         // Otherwise we have to merge
