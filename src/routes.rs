@@ -24,12 +24,17 @@ async fn auth(config: Arc<RoutesConfig>, header: String) -> Result<(), warp::Rej
 
     return Err(warp::reject::custom(GravelError::AuthError));
 }
-
 pub fn get_routes(aggregator: Aggregator, config: RoutesConfig) -> impl Filter<Extract = impl warp::Reply, Error = warp::Rejection> + Clone {
+    let default_auth = warp::any().map(|| {
+        return String::new();
+    });
+
     let config = Arc::new(config);
+    let auth = warp::header::<String>("authorization").or(default_auth).unify().and_then(move |header| auth(config.clone(), header)).untuple_one();
+
     let push_metrics_path = warp::path("metrics")
         .and(warp::post())
-        .and(warp::header::<String>("authorization").and_then(move |header| auth(config.clone(), header)).untuple_one())
+        .and(auth)
         .and(warp::filters::body::bytes())
         .and(warp::path::tail())
         .and(with_aggregator(aggregator.clone()))
