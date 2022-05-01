@@ -94,5 +94,5 @@ async fn ingest_metrics(
 }
 
 async fn get_metrics(agg: Aggregator) -> Result<impl warp::Reply, warp::Rejection> {
-    Ok(format!("{}", agg.to_string().await))
+    Ok(agg.to_string().await)
 }
