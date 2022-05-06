@@ -1,6 +1,6 @@
 [package]
 name = "gravel-gateway"
-version = "1.1.2"
+version = "1.2.0"
 edition = "2018"
 license = "LGPL-3.0"
 description = "A Prometheus Push Gateway for FAAS applications"
@@ -25,6 +25,7 @@ futures = "0.3.7"
 bcrypt = {optional = true, version = "0.10"}
 
 [features]
-default = ["tls", "auth"]
+default = ["tls", "auth", "clustering"]
 tls = ["warp/tls"]
 auth = ["bcrypt"]
+clustering = []

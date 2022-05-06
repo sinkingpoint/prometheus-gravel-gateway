@@ -25,6 +25,42 @@ async fn main() {
                 .takes_value(true)
                 .default_value("localhost:4278"),
         );
+    
+
+    #[cfg(feature="clustering")]
+    let app = app.arg(
+        Arg::with_name("cluster-enabled")
+            .long("cluster-enabled")
+            .help("Whether or not to enable clustering")
+    );
+    
+    #[cfg(feature="clustering")]
+    let app = app.arg(
+        Arg::with_name("peers")
+            .long("peer")
+            .takes_value(true)
+            .multiple(true)
+            .requires("cluster-enabled")
+            .help("The address/port of a peer to connect to")
+    );
+
+    #[cfg(feature="clustering")]
+    let app = app.arg(
+        Arg::with_name("peers-srv")
+            .long("peers-srv")
+            .takes_value(true)
+            .requires("cluster-enabled")
+            .help("The SRV record to look up to discover peers")
+    );
+
+    #[cfg(feature="clustering")]
+    let app = app.arg(
+        Arg::with_name("peers-file")
+            .long("peers-srv")
+            .takes_value(true)
+            .requires("cluster-enabled")
+            .help("The SRV record to look up to discover peers")
+    );
 
     #[cfg(feature="tls")]
     let app = app.arg(
@@ -86,7 +122,8 @@ async fn main() {
         if let Some(path) = matches.value_of("basic-auth-file") {
             config = match basic_auth(PathBuf::from(path)) {
                 Ok(authenticator) => RoutesConfig {
-                    authenticator: Box::new(authenticator)
+                    authenticator: Box::new(authenticator),
+                    cluster_conf: None
                 },
                 Err(e) => {
                     error!(log, "Failed to load basic auth file ({}) - {}", path, e);
