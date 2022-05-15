@@ -63,13 +63,16 @@ With the counter value being replaced, the gauge value being sumed, and the vers
 Prometheus Gravel Gateway 
 
 USAGE:
-    gravel-gateway [OPTIONS]
+    gravel-gateway [FLAGS] [OPTIONS]
 
 FLAGS:
-    -h, --help       
+    --cluster-enabled    
+        Whether or not to enable clustering
+
+    -h, --help               
             Prints help information
 
-    -V, --version    
+    -V, --version            
             Prints version information
 
 
@@ -80,6 +83,15 @@ OPTIONS:
                             with each line being an allowed hash.
     -l <listen>                                
             The address/port to listen on [default: localhost:4278]
+
+        --peer <peers>...                      
+            The address/port of a peer to connect to
+
+        --peers-file <peers-file>              
+            The SRV record to look up to discover peers
+
+        --peers-srv <peers-srv>                
+            The SRV record to look up to discover peers
 
         --tls-cert <tls-cert>                  
             The certificate file to use with TLS
@@ -143,6 +155,20 @@ You'll note that we don't base64 the authorization header, so it's not _technica
 ### TLS
 
 TLS is provided by the `tls-key` and `tls-cert` args. Both are required to start a TLS server, and represent the private key, and the certificate that is presented respectively.
+
+### Clustering
+
+To horizonally scale the gateway, you can use clustering. The Gravel Gateway support clustering by maintaining a hash ring of peers, provided by either a static list, an SRV record, or a file. When a request comes in, if clustering is enabled, the job label is hashed to produce an "authoritive" node for that job, and the request is forwarded accordingly. That node thus becomes the only node that will expose metrics for the given job.
+
+To enable clustering, use the `cluster-enabled` flag, and provide a discovery mechanism. For example:
+
+```
+./gravel-gateway --cluster-enabled --peer localhost:4279 --peer localhost:4280
+./gravel-gateway --cluster-enabled -l localhost:4279 --peer localhost:4278 --peer localhost:4280
+./gravel-gateway --cluster-enabled -l localhost:4280 --peer localhost:4278 --peer localhost:4279
+```
+
+starts three gravel gateway instances, clustered such that they will forward requests between each other
 
 ## Motivation
 I [recently wrote](https://blog.sinkingpoint.com/posts/prometheus-for-faas/) about my frustrations with trying to orchestrate Prometheus in an FAAS (Functions-As-A-Service) system that will rename nameless.
