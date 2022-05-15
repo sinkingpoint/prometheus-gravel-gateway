@@ -9,6 +9,9 @@ use crate::{auth::pass_through_auth, routes::RoutesConfig};
 mod aggregator;
 mod routes;
 
+#[cfg(feature="clustering")]
+mod clustering;
+
 #[cfg(test)]
 mod aggregator_test;
 mod auth;
@@ -56,7 +59,7 @@ async fn main() {
     #[cfg(feature="clustering")]
     let app = app.arg(
         Arg::with_name("peers-file")
-            .long("peers-srv")
+            .long("peers-file")
             .takes_value(true)
             .requires("cluster-enabled")
             .help("The SRV record to look up to discover peers")
@@ -112,8 +115,46 @@ async fn main() {
 
     info!(log, "Listening on: {:?}", address);
 
+    #[cfg(feature="clustering")]
+    let mut cluster_conf = None;
+    #[cfg(feature="clustering")]
+    {
+        let cluster_enabled = matches.is_present("cluster-enabled");
+        if cluster_enabled {
+            let self_url = matches.value_of("listen").unwrap().to_owned() + "/metrics";
+            if let Some(peers) = matches.values_of("peers") {
+                let peers = peers.map(|p| p.to_string()).collect();
+                cluster_conf = Some(clustering::ClusterConfig::new_from_static(self_url, peers));
+            }
+            else if let Some(peers_file) = matches.value_of("peers-file") {
+                match clustering::ClusterConfig::new_from_file(self_url, peers_file) {
+                    Ok(c) => cluster_conf = Some(c),
+                    Err(e) => {
+                        error!(log, "Failed to load cluster config from file {}: {}", peers_file, e);
+                        return;
+                    }
+                }
+            }
+            else if let Some(peers_srv) = matches.value_of("peers-srv") {
+                match clustering::ClusterConfig::new_from_srv(self_url, peers_srv) {
+                    Ok(c) => cluster_conf = Some(c),
+                    Err(e) => {
+                        error!(log, "Failed to load cluster config from SRV {}: {}", peers_srv, e);
+                        return;
+                    }
+                }
+            }
+            else {
+                error!(log, "Cluster enabled, but no peers specified");
+                return;
+            }
+        }
+    }
+
     let mut config = RoutesConfig{
-        authenticator: Box::new(pass_through_auth())
+        authenticator: Box::new(pass_through_auth()),
+        #[cfg(feature="clustering")]
+        cluster_conf
     };
 
     #[cfg(feature = "auth")]

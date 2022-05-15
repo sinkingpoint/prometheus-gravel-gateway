@@ -4,6 +4,9 @@ use warp::{Filter, http::HeaderValue, hyper::{HeaderMap, body::Bytes}, path::Tai
 
 use crate::{aggregator::{AggregationError, Aggregator}, auth::Authenticator};
 
+#[cfg(feature="clustering")]
+use crate::clustering::ClusterConfig;
+
 #[derive(Debug)]
 enum GravelError {
     Error(String),
@@ -14,7 +17,9 @@ enum GravelError {
 impl Reject for GravelError {}
 
 pub struct RoutesConfig {
-    pub authenticator: Box<dyn Authenticator + Send + Sync>
+    pub authenticator: Box<dyn Authenticator + Send + Sync>,
+    #[cfg(feature="clustering")]
+    pub cluster_conf: Option<ClusterConfig>
 }
 
 async fn auth(config: Arc<RoutesConfig>, header: String) -> Result<(), warp::Rejection> {
@@ -24,13 +29,16 @@ async fn auth(config: Arc<RoutesConfig>, header: String) -> Result<(), warp::Rej
 
     return Err(warp::reject::custom(GravelError::AuthError));
 }
+
 pub fn get_routes(aggregator: Aggregator, config: RoutesConfig) -> impl Filter<Extract = impl warp::Reply, Error = warp::Rejection> + Clone {
     let default_auth = warp::any().map(|| {
         return String::new();
     });
 
     let config = Arc::new(config);
-    let auth = warp::header::<String>("authorization").or(default_auth).unify().and_then(move |header| auth(config.clone(), header)).untuple_one();
+    let auth_config = Arc::clone(&config);
+
+    let auth = warp::header::<String>("authorization").or(default_auth).unify().and_then(move |header| auth(auth_config.clone(), header)).untuple_one();
 
     let push_metrics_path = warp::path("metrics")
         .and(warp::post())
@@ -38,6 +46,7 @@ pub fn get_routes(aggregator: Aggregator, config: RoutesConfig) -> impl Filter<E
         .and(warp::filters::body::bytes())
         .and(warp::path::tail())
         .and(with_aggregator(aggregator.clone()))
+        .and(with_config(Arc::clone(&config)))
         .and_then(ingest_metrics);
 
     let mut get_metrics_headers = HeaderMap::new();
@@ -58,17 +67,38 @@ fn with_aggregator(
     warp::any().map(move || agg.clone())
 }
 
+fn with_config(
+    conf: Arc<RoutesConfig>,
+) -> impl Filter<Extract = (Arc<RoutesConfig>,), Error = std::convert::Infallible> + Clone {
+    warp::any().map(move || Arc::clone(&conf))
+}
+
+async fn forward_to_peer(peer: &str, data: Bytes, url_tail: Tail) -> Result<(), GravelError> {
+    let client = reqwest::Client::new();
+    return match client.post(peer.to_owned() + "/" + url_tail.as_str()).body(data).send().await {
+        Ok(o) => {
+            if o.status().is_success() {
+                return Ok(());
+            }
+
+            return Err(GravelError::Error(format!("Failed to forward to peer. Got status: {}", 200)));
+        },
+        Err(e) => Err(GravelError::Error(e.to_string()))
+    }
+}
+
 /// The routes for POST /metrics requests - takes a Prometheus exposition format
 /// and merges it into the existing metrics. Also supports push gateway syntax - /metrics/job/foo
 /// adds a job="foo" label to all the metrics
 async fn ingest_metrics(
     data: Bytes,
-    tail: Tail,
-    mut agg: Aggregator
+    url_tail: Tail,
+    mut agg: Aggregator,
+    conf: Arc<RoutesConfig>
 ) -> Result<impl warp::Reply, warp::Rejection> {
     let labels = {
         let mut labelset = HashMap::new();
-        let mut labels = tail.as_str().split("/").peekable();
+        let mut labels = url_tail.as_str().split("/").peekable();
         while labels.peek().is_some() {
             let name = labels.next().unwrap();
             if name.is_empty() {
@@ -79,6 +109,19 @@ async fn ingest_metrics(
         }
         labelset
     };
+
+    // We're clustering, so might need to forward the metrics
+    if let Some(cluster_conf) = conf.cluster_conf.as_ref() {
+        let job = labels.get("job").unwrap_or(&"");
+        if let Some(peer) = cluster_conf.get_peer_for_key(job) {
+            if !cluster_conf.is_self(peer) {
+                match forward_to_peer(peer, data, url_tail).await {
+                    Ok(_) => return Ok(""),
+                    Err(e) => return Err(warp::reject::custom(e))
+                }
+            }
+        }
+    }
 
     let body = match String::from_utf8(data.to_vec()) {
         Ok(s) => s,

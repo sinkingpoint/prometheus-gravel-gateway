@@ -223,7 +223,7 @@ impl AggregationFamily {
 }
 
 /// Aggregator is an struct that stores a number of metric families, and has the ability to merge
-/// new metric families into itsels
+/// new metric families into itself
 #[derive(Debug, Clone)]
 pub struct Aggregator {
     /// The families in this Aggregator
