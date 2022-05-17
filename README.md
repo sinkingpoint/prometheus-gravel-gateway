@@ -170,13 +170,21 @@ To enable clustering, use the `cluster-enabled` flag, and provide a discovery me
 
 starts three gravel gateway instances, clustered such that they will forward requests between each other
 
+### Pebbles
+
+Some times, for Gauges, you don't want to track just one of your values (the default for Gauges is "replace"). If we have, say, a new release that doubles the memory usage, then we probably want to know about that increase without it being pulled down by weeks of the previous version. For this usecase, the Gravel Gateway supports "pebbles". Pebbles are effectively a circular buffer of time based buckets. Each bucket represents a distinct timeslice, and tracks a pre-aggregated value inside that time slice. The final value for the metric is the same aggregation applied over each bucket.
+
+This means that we actually get an "aggregate of aggregates" out the other end, which does lose _some_ precision compared to storing all the raw data but in practice this hasn't affected us much. 
+
+You can start a pebble using a clearmode in the form `<aggregation><time>` e.g. `{clearmode="mean5m"}` will take a mean over the last 5 minutes of incoming data. Available aggregations at the moment include "sum" and "mean", but "median" is coming soon, and maybe "percentile" would be a good PR.
+
 ## Motivation
 I [recently wrote](https://blog.sinkingpoint.com/posts/prometheus-for-faas/) about my frustrations with trying to orchestrate Prometheus in an FAAS (Functions-As-A-Service) system that will rename nameless.
 My key frustration was that the number of semantics I was trying to extract from my Prometheus metrics was too much for the limited amount of data you can 
 ship with them. In particular, there was three semantics I was trying to drive:
 
 1. Aggregated Counters - Things like request counts. FAAS applications only process one request (in general), so each sends a 1 to the gateway and I want to aggregate that into a total request count across all the invocations
-2. Non aggregated Gauges - It doesn't really make sense to aggregate Gauges in the general case, so I want to be able to send gauge values to the gateway and have them replace the old value (TODO: A rolling average would be nice)
+2. Non aggregated Gauges - It doesn't really make sense to aggregate Gauges in the general case, so I want to be able to send gauge values to the gateway and have them replace the old value
 3. Info values - Things like the build information. When a new labelset comes along for these metrics, I want to be able to replace all the old labelsets, e.g. upgrading from `{version="0.1"}` to `{version="0.2"}` should replace the `{version="0.1"}` labelset
 
 Existing gateways, like the [prom-aggregation-gateway](https://github.com/weaveworks/prom-aggregation-gateway), or [pushgateway](https://github.com/prometheus/pushgateway) are all or nothing in regards to aggregation - the pushgateway does not aggregate at all, completly replacing values as they come in. The aggregation gateway is the opposite here - it aggregates everything. What I wanted was something that allows more flexibility in how metrics are aggregated. To that end, I wrote the Gravel Gateway
