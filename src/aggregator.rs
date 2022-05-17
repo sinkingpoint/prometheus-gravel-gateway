@@ -1,7 +1,9 @@
-use std::{collections::HashMap, str::FromStr, sync::Arc, fmt};
+use std::{collections::HashMap, str::FromStr, sync::Arc, fmt, time::Duration};
 
-use openmetrics_parser::{RenderableMetricValue, HistogramBucket, HistogramValue, MetricsExposition, ParseError, PrometheusCounterValue, PrometheusMetricFamily, PrometheusType, PrometheusValue, Sample, prometheus, MetricFamily, Timestamp};
+use openmetrics_parser::{RenderableMetricValue, HistogramBucket, MetricsExposition, ParseError, PrometheusMetricFamily, PrometheusType, PrometheusValue, Sample, prometheus, MetricFamily, Timestamp, MetricNumber};
 use tokio::sync::RwLock;
+
+use crate::pebble::{TimePebble, parse_duration, sum_merge_strategy, mean_merge_strategy};
 
 const CLEARMODE_LABEL_NAME: &str = "clearmode";
 
@@ -22,6 +24,8 @@ pub enum ClearMode {
     Aggregate,
     Replace,
     Family,
+    Mean(Duration),
+    Sum(Duration)
 }
 
 type GravelMetricFamily = MetricFamily<PrometheusType, GravelValue>;
@@ -29,6 +33,7 @@ type GravelMetricFamily = MetricFamily<PrometheusType, GravelValue>;
 #[derive(Debug, Clone, PartialEq)]
 pub enum GravelValue {
     Prometheus(PrometheusValue),
+    Pebble(TimePebble)
 }
 
 impl RenderableMetricValue for GravelValue {
@@ -42,6 +47,11 @@ impl RenderableMetricValue for GravelValue {
     ) -> fmt::Result {
         match self {
             GravelValue::Prometheus(v) => v.render(f, metric_name, timestamp, label_names, label_values),
+            GravelValue::Pebble(pebble) => {
+                let value = pebble.aggregate();
+
+                return PrometheusValue::Gauge(MetricNumber::Float(value)).render(f, metric_name, timestamp, label_names, label_values);
+            }
         }
     }
 }
@@ -52,15 +62,30 @@ impl From<PrometheusValue> for GravelValue {
     }
 }
 
+impl GravelValue {
+    fn convert_with_clearmode(self, clearmode: ClearMode) -> GravelValue {
+        const DEFAULT_PEBBLE_GRANULARITY: usize = 100;
+        match clearmode {
+            ClearMode::Sum(duration) => {
+                return GravelValue::Pebble(TimePebble::new(duration, DEFAULT_PEBBLE_GRANULARITY, sum_merge_strategy));
+            },
+            ClearMode::Mean(duration) => {
+                return GravelValue::Pebble(TimePebble::new(duration, DEFAULT_PEBBLE_GRANULARITY, mean_merge_strategy));
+            }
+            _ => return self
+        }
+    }
+}
+
 impl ClearMode {
-    fn default_for_type(t: &PrometheusType) -> ClearMode {
+    fn default_for_type(t: PrometheusType) -> ClearMode {
         match t {
             PrometheusType::Counter | PrometheusType::Unknown | PrometheusType::Histogram | PrometheusType::Summary => ClearMode::Aggregate,
             PrometheusType::Gauge => ClearMode::Replace,
         }
     }
 
-    fn from_family<T>(family_type: &PrometheusType, metric: &Sample<T>) -> ClearMode where T: RenderableMetricValue + Clone {
+    fn from_family<T>(family_type: PrometheusType, metric: &Sample<T>) -> ClearMode where T: RenderableMetricValue + Clone {
         match metric.get_labelset().unwrap().get_label_value(CLEARMODE_LABEL_NAME) {
             Some(c) => ClearMode::from_str(c).unwrap_or(ClearMode::default_for_type(family_type)),
             None => ClearMode::default_for_type(family_type)
@@ -73,10 +98,28 @@ impl FromStr for ClearMode {
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         match s {
-            "aggregate" => Ok(ClearMode::Aggregate),
+            "aggregate" | "sum" => Ok(ClearMode::Aggregate),
             "replace" => Ok(ClearMode::Replace),
-            "family" => Ok(ClearMode::Family),
-            _ => Err(AggregationError::Error(format!("Invalid clearmode: {}", s)))
+            "family" | "info" => Ok(ClearMode::Family),
+            _ => {
+                if s.starts_with("mean") || s.starts_with("sum") {
+                    let num_preceeding = s.chars().take_while(|c| c.is_digit(10)).count();
+                    match parse_duration(&s[num_preceeding..]) {
+                        Some(duration) => {
+                            if s.starts_with("mean") {
+                                return Ok(ClearMode::Mean(duration))
+                            }
+
+                            if s.starts_with("sum") {
+                                return Ok(ClearMode::Sum(duration))
+                            }
+                        },
+                        None => return Err(AggregationError::Error(format!("Invalid duration string: {}", &s[num_preceeding..])))
+                    }
+                }
+
+                Err(AggregationError::Error(format!("Invalid clearmode: {}", s)))
+            }
         }
     }
 }
@@ -130,32 +173,32 @@ fn merge_buckets(val1: &Vec<HistogramBucket>, val2: &Vec<HistogramBucket>) -> Ve
 
 /// Merges two metrics into one another (using the given clearmode), storing the result in the first one.
 pub fn merge_metric(into: &mut Sample<GravelValue>, merge: Sample<GravelValue>, clear_mode: ClearMode) {
-    into.value = match (&into.value, &merge.value) {
+    match (&mut into.value, &merge.value) {
         (GravelValue::Prometheus(PrometheusValue::Unknown(val1)), GravelValue::Prometheus(PrometheusValue::Unknown(val2))) => {
             match clear_mode {
-                ClearMode::Aggregate => GravelValue::Prometheus(PrometheusValue::Unknown(val1 + val2)),
-                ClearMode::Replace => GravelValue::Prometheus(PrometheusValue::Unknown(*val2)),
+                ClearMode::Aggregate => *val1 += val2,
+                ClearMode::Replace => *val1 = *val2,
                 _ => unreachable!()
             }
         }
         (GravelValue::Prometheus(PrometheusValue::Gauge(val1)), GravelValue::Prometheus(PrometheusValue::Gauge(val2))) => {
             match clear_mode {
-                ClearMode::Aggregate => GravelValue::Prometheus(PrometheusValue::Gauge(val1 + val2)),
-                ClearMode::Replace => GravelValue::Prometheus(PrometheusValue::Gauge(*val2)),
+                ClearMode::Aggregate => *val1 += val2,
+                ClearMode::Replace => *val1 = *val2,
                 _ => unreachable!()
             }
         }
         (GravelValue::Prometheus(PrometheusValue::Counter(val1)), GravelValue::Prometheus(PrometheusValue::Counter(val2))) => {
             // Counters get a bit more complicated - we take the second exemplar no matter what
             match clear_mode {
-                ClearMode::Aggregate => GravelValue::Prometheus(PrometheusValue::Counter(PrometheusCounterValue {
-                    value: val1.value + val2.value,
-                    exemplar: val2.exemplar.clone(),
-                })),
-                ClearMode::Replace => GravelValue::Prometheus(PrometheusValue::Counter(PrometheusCounterValue {
-                    value: val2.value,
-                    exemplar: val2.exemplar.clone(),
-                })),
+                ClearMode::Aggregate => {
+                    val1.value += val2.value;
+                    val1.exemplar = val2.exemplar.clone();
+                }
+                ClearMode::Replace => {
+                    val1.value = val2.value;
+                    val1.exemplar = val2.exemplar.clone();
+                },
                 _ => unreachable!()
             }
         }
@@ -178,22 +221,34 @@ pub fn merge_metric(into: &mut Sample<GravelValue>, merge: Sample<GravelValue>, 
                 _ => unreachable!()
             };
 
-            GravelValue::Prometheus(PrometheusValue::Histogram(HistogramValue {
-                sum,
-                count,
-                created: val2.created,
-                buckets,
-            }))
+            val1.sum = sum;
+            val1.count = count;
+            val1.buckets = buckets;
+            val1.created = val2.created;
         }
+        (GravelValue::Pebble(time_pebble), GravelValue::Prometheus(p)) => {
+            match p {
+                PrometheusValue::Counter(counter) => time_pebble.append(counter.value.as_f64()),
+                PrometheusValue::Gauge(gauge) => time_pebble.append(gauge.as_f64()),
+                _ => {}
+            }
+        },
         (GravelValue::Prometheus(PrometheusValue::Summary(_)), GravelValue::Prometheus(PrometheusValue::Summary(_))) => todo!(),
         _ => unreachable!(),
-    }
+    };
 }
 
 impl AggregationFamily {
     // Constructs a new AggregationFamily, over the given MetricFamily
     fn new(base_family: PrometheusMetricFamily) -> Self {
-        let base_family = base_family.without_label(CLEARMODE_LABEL_NAME).unwrap_or(base_family).clone_and_convert_type();
+        let mut base_family: GravelMetricFamily = base_family.clone_and_convert_type();
+        let family_type = base_family.family_type.clone();
+        for metric in base_family.iter_samples_mut() {
+            let clear_mode = ClearMode::from_family(family_type.clone(), &metric);
+            metric.value = metric.value.clone().convert_with_clearmode(clear_mode);
+        }
+
+        let base_family = base_family.without_label(CLEARMODE_LABEL_NAME).unwrap_or(base_family);
         Self { base_family }
     }
 
@@ -218,20 +273,20 @@ impl AggregationFamily {
 
         // We should clear the whole family if any of the samples has a clearmode="family" label
         let should_clear_family = new_family.iter_samples().any(|metric| {
-            ClearMode::from_family(&new_family.family_type, metric) == ClearMode::Family
+            ClearMode::from_family(new_family.family_type.clone(), metric) == ClearMode::Family
         });
 
         if should_clear_family {
             self.base_family = new_family.without_label(CLEARMODE_LABEL_NAME).unwrap_or(new_family);
         }
         else {
-            let family_type = self.base_family.family_type.clone();
             for metric in new_family.into_iter_samples() {
                 // TODO: This is really inefficient for large families. Should probably optimise it
                 // Go uses "label fingerprinting" to generate hashes of labelsets.
 
                 // We want to compare without the clearmode label - it's not stored, so doesn't exist in our internal representation
                 let cmp_metric = metric.without_label(CLEARMODE_LABEL_NAME).unwrap_or(metric.clone());
+                let clear_mode = ClearMode::from_family(self.base_family.family_type.clone(), &metric);
                 match self.base_family.get_sample_matches_mut(&cmp_metric)
                 {
                     None => {
@@ -240,7 +295,6 @@ impl AggregationFamily {
                     },
                     Some(s) => {
                         // Otherwise we have to merge
-                        let clear_mode = ClearMode::from_family(&family_type, &metric);
                         merge_metric(s, metric, clear_mode);
                     }
                 }

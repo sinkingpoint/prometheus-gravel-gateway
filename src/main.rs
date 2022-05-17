@@ -8,6 +8,7 @@ use crate::{auth::pass_through_auth, routes::RoutesConfig};
 
 mod aggregator;
 mod routes;
+mod pebble;
 
 #[cfg(feature="clustering")]
 mod clustering;
