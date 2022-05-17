@@ -19,21 +19,21 @@ fn test_clear_mode_parsing() {
 
 #[test]
 fn test_clear_mode_replace() {
-    let mut sample = Sample::new(vec![], None, PrometheusValue::Gauge(MetricNumber::Int(1)));
+    let mut sample = Sample::new(vec![], None, GravelValue::Prometheus(PrometheusValue::Gauge(MetricNumber::Int(1))));
     merge_metric(&mut sample, 
-                Sample::new(vec![], None, PrometheusValue::Gauge(MetricNumber::Int(2))),
+                Sample::new(vec![], None, GravelValue::Prometheus(PrometheusValue::Gauge(MetricNumber::Int(2)))),
                       ClearMode::Replace);
 
-    assert_eq!(sample.value, PrometheusValue::Gauge(MetricNumber::Int(2)));
+    assert_eq!(sample.value, GravelValue::Prometheus(PrometheusValue::Gauge(MetricNumber::Int(2))));
 
     // Test that exemplars get replaced
-    let mut sample = Sample::new(vec![], None, PrometheusValue::Counter(PrometheusCounterValue{
+    let mut sample = Sample::new(vec![], None, GravelValue::Prometheus(PrometheusValue::Counter(PrometheusCounterValue{
         value: MetricNumber::Int(1),
         exemplar: None,
-    }));
+    })));
 
     merge_metric(&mut sample, 
-                Sample::new(vec![], None, PrometheusValue::Counter(
+                Sample::new(vec![], None, GravelValue::Prometheus(PrometheusValue::Counter(
                     PrometheusCounterValue{
                         value: MetricNumber::Int(1000),
                         exemplar: Some(Exemplar {
@@ -42,59 +42,59 @@ fn test_clear_mode_replace() {
                             id: 1000.,
                         }),
                     }
-                )),
+                ))),
                 ClearMode::Replace);
 
-    assert_eq!(sample.value, PrometheusValue::Counter(PrometheusCounterValue{
+    assert_eq!(sample.value, GravelValue::Prometheus(PrometheusValue::Counter(PrometheusCounterValue{
         value: MetricNumber::Int(1000),
         exemplar: Some(Exemplar {
             labels: HashMap::new(),
             timestamp: None,
             id: 1000.,
         }),
-    }));
+    })));
 
-    let mut sample = Sample::new(vec![], None, PrometheusValue::Counter(PrometheusCounterValue{
+    let mut sample = Sample::new(vec![], None, GravelValue::Prometheus(PrometheusValue::Counter(PrometheusCounterValue{
         value: MetricNumber::Int(1),
         exemplar: Some(Exemplar {
             labels: HashMap::new(),
             timestamp: None,
             id: 1000.,
         }),
-    }));
+    })));
 
     merge_metric(&mut sample, 
-                Sample::new(vec![], None, PrometheusValue::Counter(
+                Sample::new(vec![], None, GravelValue::Prometheus(PrometheusValue::Counter(
                     PrometheusCounterValue{
                         value: MetricNumber::Int(1000),
                         exemplar: None
                     }
-                )),
+                ))),
                 ClearMode::Replace);
 
-    assert_eq!(sample.value, PrometheusValue::Counter(PrometheusCounterValue{
+    assert_eq!(sample.value, GravelValue::Prometheus(PrometheusValue::Counter(PrometheusCounterValue{
         value: MetricNumber::Int(1000),
         exemplar: None,
-    }));
+    })));
 }
 
 #[test]
 fn test_clear_mode_aggregate() {
-    let mut sample = Sample::new(vec![], None, PrometheusValue::Gauge(MetricNumber::Int(1)));
+    let mut sample = Sample::new(vec![], None, GravelValue::Prometheus(PrometheusValue::Gauge(MetricNumber::Int(1))));
     merge_metric(&mut sample, 
-                Sample::new(vec![], None, PrometheusValue::Gauge(MetricNumber::Int(2))),
+                Sample::new(vec![], None, GravelValue::Prometheus(PrometheusValue::Gauge(MetricNumber::Int(2)))),
                       ClearMode::Aggregate);
 
-    assert_eq!(sample.value, PrometheusValue::Gauge(MetricNumber::Int(3)));
+    assert_eq!(sample.value, GravelValue::Prometheus(PrometheusValue::Gauge(MetricNumber::Int(3))));
 
     // Test that exemplars get replaced
-    let mut sample = Sample::new(vec![], None, PrometheusValue::Counter(PrometheusCounterValue{
+    let mut sample = Sample::new(vec![], None, GravelValue::Prometheus(PrometheusValue::Counter(PrometheusCounterValue{
         value: MetricNumber::Int(1),
         exemplar: None,
-    }));
+    })));
 
     merge_metric(&mut sample, 
-                Sample::new(vec![], None, PrometheusValue::Counter(
+                Sample::new(vec![], None, GravelValue::Prometheus(PrometheusValue::Counter(
                     PrometheusCounterValue{
                         value: MetricNumber::Int(1000),
                         exemplar: Some(Exemplar {
@@ -103,38 +103,38 @@ fn test_clear_mode_aggregate() {
                             id: 1000.,
                         }),
                     }
-                )),
+                ))),
                 ClearMode::Aggregate);
 
-    assert_eq!(sample.value, PrometheusValue::Counter(PrometheusCounterValue{
+    assert_eq!(sample.value, GravelValue::Prometheus(PrometheusValue::Counter(PrometheusCounterValue{
         value: MetricNumber::Int(1001),
         exemplar: Some(Exemplar {
             labels: HashMap::new(),
             timestamp: None,
             id: 1000.,
         }),
-    }));
+    })));
 
-    let mut sample = Sample::new(vec![], None, PrometheusValue::Counter(PrometheusCounterValue{
+    let mut sample = Sample::new(vec![], None, GravelValue::Prometheus(PrometheusValue::Counter(PrometheusCounterValue{
         value: MetricNumber::Int(1),
         exemplar: Some(Exemplar {
             labels: HashMap::new(),
             timestamp: None,
             id: 1000.,
         }),
-    }));
+    })));
 
     merge_metric(&mut sample, 
-                Sample::new(vec![], None, PrometheusValue::Counter(
+                Sample::new(vec![], None, GravelValue::Prometheus(PrometheusValue::Counter(
                     PrometheusCounterValue{
                         value: MetricNumber::Int(1000),
                         exemplar: None
                     }
-                )),
+                ))),
                 ClearMode::Aggregate);
 
-    assert_eq!(sample.value, PrometheusValue::Counter(PrometheusCounterValue{
+    assert_eq!(sample.value, GravelValue::Prometheus(PrometheusValue::Counter(PrometheusCounterValue{
         value: MetricNumber::Int(1001),
         exemplar: None,
-    }));
+    })));
 }

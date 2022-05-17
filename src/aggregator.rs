@@ -1,6 +1,6 @@
-use std::{collections::HashMap, str::FromStr, sync::Arc};
+use std::{collections::HashMap, str::FromStr, sync::Arc, fmt};
 
-use openmetrics_parser::{HistogramBucket, HistogramValue, MetricsExposition, ParseError, PrometheusCounterValue, PrometheusMetricFamily, PrometheusType, PrometheusValue, Sample, prometheus};
+use openmetrics_parser::{RenderableMetricValue, HistogramBucket, HistogramValue, MetricsExposition, ParseError, PrometheusCounterValue, PrometheusMetricFamily, PrometheusType, PrometheusValue, Sample, prometheus, MetricFamily, Timestamp};
 use tokio::sync::RwLock;
 
 const CLEARMODE_LABEL_NAME: &str = "clearmode";
@@ -24,6 +24,34 @@ pub enum ClearMode {
     Family,
 }
 
+type GravelMetricFamily = MetricFamily<PrometheusType, GravelValue>;
+
+#[derive(Debug, Clone, PartialEq)]
+pub enum GravelValue {
+    Prometheus(PrometheusValue),
+}
+
+impl RenderableMetricValue for GravelValue {
+    fn render(
+        &self,
+        f: &mut fmt::Formatter<'_>,
+        metric_name: &str,
+        timestamp: Option<&Timestamp>,
+        label_names: &[&str],
+        label_values: &[&str],
+    ) -> fmt::Result {
+        match self {
+            GravelValue::Prometheus(v) => v.render(f, metric_name, timestamp, label_names, label_values),
+        }
+    }
+}
+
+impl From<PrometheusValue> for GravelValue {
+    fn from(prom: PrometheusValue) -> Self {
+        return GravelValue::Prometheus(prom.clone());
+    }
+}
+
 impl ClearMode {
     fn default_for_type(t: &PrometheusType) -> ClearMode {
         match t {
@@ -32,7 +60,7 @@ impl ClearMode {
         }
     }
 
-    fn from_family(family_type: &PrometheusType, metric: &Sample<PrometheusValue>) -> ClearMode {
+    fn from_family<T>(family_type: &PrometheusType, metric: &Sample<T>) -> ClearMode where T: RenderableMetricValue + Clone {
         match metric.get_labelset().unwrap().get_label_value(CLEARMODE_LABEL_NAME) {
             Some(c) => ClearMode::from_str(c).unwrap_or(ClearMode::default_for_type(family_type)),
             None => ClearMode::default_for_type(family_type)
@@ -57,7 +85,7 @@ impl FromStr for ClearMode {
 /// new families into itself
 #[derive(Debug)]
 struct AggregationFamily {
-    base_family: PrometheusMetricFamily,
+    base_family: GravelMetricFamily,
 }
 
 /// Takes two sets of Histogram buckets and merges them. Assumes that they are in ascending order of upperbound
@@ -101,37 +129,37 @@ fn merge_buckets(val1: &Vec<HistogramBucket>, val2: &Vec<HistogramBucket>) -> Ve
 }
 
 /// Merges two metrics into one another (using the given clearmode), storing the result in the first one.
-pub fn merge_metric(into: &mut Sample<PrometheusValue>, merge: Sample<PrometheusValue>, clear_mode: ClearMode) {
+pub fn merge_metric(into: &mut Sample<GravelValue>, merge: Sample<GravelValue>, clear_mode: ClearMode) {
     into.value = match (&into.value, &merge.value) {
-        (PrometheusValue::Unknown(val1), PrometheusValue::Unknown(val2)) => {
+        (GravelValue::Prometheus(PrometheusValue::Unknown(val1)), GravelValue::Prometheus(PrometheusValue::Unknown(val2))) => {
             match clear_mode {
-                ClearMode::Aggregate => PrometheusValue::Unknown(val1 + val2),
-                ClearMode::Replace => PrometheusValue::Unknown(*val2),
+                ClearMode::Aggregate => GravelValue::Prometheus(PrometheusValue::Unknown(val1 + val2)),
+                ClearMode::Replace => GravelValue::Prometheus(PrometheusValue::Unknown(*val2)),
                 _ => unreachable!()
             }
         }
-        (PrometheusValue::Gauge(val1), PrometheusValue::Gauge(val2)) => {
+        (GravelValue::Prometheus(PrometheusValue::Gauge(val1)), GravelValue::Prometheus(PrometheusValue::Gauge(val2))) => {
             match clear_mode {
-                ClearMode::Aggregate => PrometheusValue::Gauge(val1 + val2),
-                ClearMode::Replace => PrometheusValue::Gauge(*val2),
+                ClearMode::Aggregate => GravelValue::Prometheus(PrometheusValue::Gauge(val1 + val2)),
+                ClearMode::Replace => GravelValue::Prometheus(PrometheusValue::Gauge(*val2)),
                 _ => unreachable!()
             }
         }
-        (PrometheusValue::Counter(val1), PrometheusValue::Counter(val2)) => {
+        (GravelValue::Prometheus(PrometheusValue::Counter(val1)), GravelValue::Prometheus(PrometheusValue::Counter(val2))) => {
             // Counters get a bit more complicated - we take the second exemplar no matter what
             match clear_mode {
-                ClearMode::Aggregate => PrometheusValue::Counter(PrometheusCounterValue {
+                ClearMode::Aggregate => GravelValue::Prometheus(PrometheusValue::Counter(PrometheusCounterValue {
                     value: val1.value + val2.value,
                     exemplar: val2.exemplar.clone(),
-                }),
-                ClearMode::Replace => PrometheusValue::Counter(PrometheusCounterValue {
+                })),
+                ClearMode::Replace => GravelValue::Prometheus(PrometheusValue::Counter(PrometheusCounterValue {
                     value: val2.value,
                     exemplar: val2.exemplar.clone(),
-                }),
+                })),
                 _ => unreachable!()
             }
         }
-        (PrometheusValue::Histogram(val1), PrometheusValue::Histogram(val2)) => {
+        (GravelValue::Prometheus(PrometheusValue::Histogram(val1)), GravelValue::Prometheus(PrometheusValue::Histogram(val2))) => {
             let sum = match (val1.sum, val2.sum, &clear_mode) {
                 (Some(a), Some(b), ClearMode::Aggregate) => Some(a + b),
                 (Some(_), Some(b), ClearMode::Replace) => Some(b),
@@ -150,14 +178,14 @@ pub fn merge_metric(into: &mut Sample<PrometheusValue>, merge: Sample<Prometheus
                 _ => unreachable!()
             };
 
-            PrometheusValue::Histogram(HistogramValue {
+            GravelValue::Prometheus(PrometheusValue::Histogram(HistogramValue {
                 sum,
                 count,
                 created: val2.created,
                 buckets,
-            })
+            }))
         }
-        (PrometheusValue::Summary(_), PrometheusValue::Summary(_)) => todo!(),
+        (GravelValue::Prometheus(PrometheusValue::Summary(_)), GravelValue::Prometheus(PrometheusValue::Summary(_))) => todo!(),
         _ => unreachable!(),
     }
 }
@@ -165,13 +193,14 @@ pub fn merge_metric(into: &mut Sample<PrometheusValue>, merge: Sample<Prometheus
 impl AggregationFamily {
     // Constructs a new AggregationFamily, over the given MetricFamily
     fn new(base_family: PrometheusMetricFamily) -> Self {
-        let base_family = base_family.without_label(CLEARMODE_LABEL_NAME).unwrap_or(base_family);
+        let base_family = base_family.without_label(CLEARMODE_LABEL_NAME).unwrap_or(base_family).clone_and_convert_type();
         Self { base_family }
     }
 
     /// Merges the given metrics family into this one, respecting (and then removing) the clear mode 
     /// label from each sample
-    fn merge(&mut self, new_family: PrometheusMetricFamily) -> Result<(), AggregationError> {
+    fn merge(&mut self, prom_family: PrometheusMetricFamily) -> Result<(), AggregationError> {
+        let new_family = prom_family.clone_and_convert_type();
         // Sanity checks to make sure that it makes sense to merge these families
         if new_family.family_name != self.base_family.family_name {
             return Err(AggregationError::Error(format!(
