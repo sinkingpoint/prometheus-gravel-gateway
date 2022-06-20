@@ -188,3 +188,14 @@ ship with them. In particular, there was three semantics I was trying to drive:
 3. Info values - Things like the build information. When a new labelset comes along for these metrics, I want to be able to replace all the old labelsets, e.g. upgrading from `{version="0.1"}` to `{version="0.2"}` should replace the `{version="0.1"}` labelset
 
 Existing gateways, like the [prom-aggregation-gateway](https://github.com/weaveworks/prom-aggregation-gateway), or [pushgateway](https://github.com/prometheus/pushgateway) are all or nothing in regards to aggregation - the pushgateway does not aggregate at all, completly replacing values as they come in. The aggregation gateway is the opposite here - it aggregates everything. What I wanted was something that allows more flexibility in how metrics are aggregated. To that end, I wrote the Gravel Gateway
+
+## How to publish a new image in ECR
+```
+export AWS_PROFILE=<aws-profile>
+export AWS_ACCOUNT_ID=<aws-account-id>
+export AWS_REGION=<ecr-region>
+export DOCKER_IMAGE_NAME=${AWS_ACCOUNT_ID}.dkr.ecr.${AWS_REGION}.amazonaws.com/prometheus-gravel-gateway
+make ecr-login
+make build DOCKER_IMAGE_NAME=${DOCKER_IMAGE_NAME}
+make push DOCKER_IMAGE_NAME=${DOCKER_IMAGE_NAME}
+```
