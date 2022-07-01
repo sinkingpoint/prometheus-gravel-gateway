@@ -337,6 +337,10 @@ impl Aggregator {
         for (name, metrics) in metrics.families {
             match families.get_mut(&name) {
                 Some(f) => {
+                    if f.base_family.get_label_names() != metrics.get_label_names() {
+                        // The new push has different label names - abort
+                        return Err(AggregationError::Error("invalid push - new push has different label names than the existing family".to_string()))
+                    }
                     // If we have the family already, merge this new stuff into it
                     f.merge(metrics)?;
                 }
