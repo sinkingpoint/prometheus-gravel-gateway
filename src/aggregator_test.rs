@@ -138,3 +138,12 @@ fn test_clear_mode_aggregate() {
         exemplar: None,
     })));
 }
+
+#[tokio::test]
+async fn test_push_with_different_label_names() {
+    let mut agg = Aggregator::new();
+    assert!(agg.parse_and_merge("requests_num_total{LAMBDA_NAME=\"test_function\"} 1\n", &HashMap::new()).await.is_ok(), "failed to parse valid metric");
+    assert!(agg.parse_and_merge("requests_num_total{job=\"test\"} 1\n", &HashMap::new()).await.is_err(), "failed to reject invalid label name");
+    assert!(agg.parse_and_merge("requests_num_total{bar=\"test\"} 1\n", &HashMap::new()).await.is_err(), "failed to reject invalid label name");
+    assert!(agg.parse_and_merge("requests_num_total{LAMBDA_NAME=\"test_function\"} 1\n", &HashMap::new()).await.is_ok(), "failed to parse metric with same label name");
+}
