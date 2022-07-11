@@ -41,7 +41,7 @@ pub fn get_routes(aggregator: Aggregator, config: RoutesConfig) -> impl Filter<E
     let auth = warp::header::<String>("authorization").or(default_auth).unify().and_then(move |header| auth(auth_config.clone(), header)).untuple_one();
 
     let push_metrics_path = warp::path("metrics")
-        .and(warp::post())
+        .and(warp::post().or(warp::put()))
         .and(auth)
         .and(warp::filters::body::bytes())
         .and(warp::path::tail())
@@ -90,7 +90,8 @@ async fn forward_to_peer(peer: &str, data: Bytes, url_tail: Tail) -> Result<(), 
 /// The routes for POST /metrics requests - takes a Prometheus exposition format
 /// and merges it into the existing metrics. Also supports push gateway syntax - /metrics/job/foo
 /// adds a job="foo" label to all the metrics
-async fn ingest_metrics(
+async fn ingest_metrics<T>(
+    _method: T,
     data: Bytes,
     url_tail: Tail,
     mut agg: Aggregator,
