@@ -146,4 +146,7 @@ async fn test_push_with_different_label_names() {
     assert!(agg.parse_and_merge("requests_num_total{job=\"test\"} 1\n", &HashMap::new()).await.is_err(), "failed to reject invalid label name");
     assert!(agg.parse_and_merge("requests_num_total{bar=\"test\"} 1\n", &HashMap::new()).await.is_err(), "failed to reject invalid label name");
     assert!(agg.parse_and_merge("requests_num_total{LAMBDA_NAME=\"test_function\"} 1\n", &HashMap::new()).await.is_ok(), "failed to parse metric with same label name");
+
+    assert!(agg.parse_and_merge("requests_num_total2{clearmode=\"mean5m\"} 1\n", &HashMap::new()).await.is_ok(), "failed to add metric with clearmode");
+    assert!(agg.parse_and_merge("requests_num_total2{clearmode=\"mean5m\"} 1\n", &HashMap::new()).await.is_ok(), "failed to add second metric with clearmode");
 }

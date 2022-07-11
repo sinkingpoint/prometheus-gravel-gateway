@@ -321,6 +321,22 @@ fn add_extra_labels(mut exposition: MetricsExposition<PrometheusType, Prometheus
     return Ok(exposition);
 }
 
+// are_label_names_equivalent checks wether two sets of label names are equivalent,
+// minus label names that are irrelevant to the final push (basically just the clearmode)
+fn are_label_names_equivalent(existing: &[String], new: &[String]) -> bool {
+    for new_label in new.iter() {
+        if new_label == CLEARMODE_LABEL_NAME {
+            continue
+        }
+
+        if !existing.contains(new_label) {
+            return false;
+        }
+    }
+
+    return true;
+}
+
 impl Aggregator {
     pub fn new() -> Aggregator {
         return Aggregator {
@@ -337,7 +353,7 @@ impl Aggregator {
         for (name, metrics) in metrics.families {
             match families.get_mut(&name) {
                 Some(f) => {
-                    if f.base_family.get_label_names() != metrics.get_label_names() {
+                    if !are_label_names_equivalent(f.base_family.get_label_names(), metrics.get_label_names()) {
                         // The new push has different label names - abort
                         return Err(AggregationError::Error("invalid push - new push has different label names than the existing family".to_string()))
                     }
