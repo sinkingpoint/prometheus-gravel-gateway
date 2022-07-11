@@ -17,6 +17,8 @@ mod clustering;
 mod aggregator_test;
 mod auth;
 
+use tokio::signal;
+
 #[tokio::main]
 async fn main() {
     let agg = Aggregator::new();
@@ -181,19 +183,27 @@ async fn main() {
     if let Some(tls_key) = matches.value_of("tls-key") {
         // Clap ensures that if one of these exists, so does the other
         let tls_cert = matches.value_of("tls-cert").unwrap();
-        tokio::join!(futures::future::join_all(address
-            .into_iter()
-            .map(move |addr| warp::serve(routes.clone()).tls().key_path(tls_key).cert_path(tls_cert).run(addr))));
+
+        tokio::select! {
+            _ = signal::ctrl_c() => {},
+
+            _ = futures::future::join_all(address.into_iter()
+                .map(move |addr| warp::serve(routes.clone()).tls().key_path(tls_key).cert_path(tls_cert).run(addr))) => {}
+        };
     }
     else {
-        tokio::join!(futures::future::join_all(address
-            .into_iter()
-            .map(move |addr| warp::serve(routes.clone()).run(addr))));
+        tokio::select! {
+            _ = signal::ctrl_c() => {},
+
+            _ = futures::future::join_all(address.into_iter()
+            .map(move |addr| warp::serve(routes.clone()).run(addr))) => {}
+        };
     };
 
     // If we don't have TLS support, just bind without it
     #[cfg(not(feature="tls"))]
-    tokio::join!(futures::future::join_all(address
-        .into_iter()
-        .map(move |addr| warp::serve(routes.clone()).run(addr))));
+    tokio::select! {
+        _ = signal::ctrl_c() => {}
+        _ = futures::future::join_all(address.into_iter().map(move |addr| warp::serve(routes.clone()).run(addr))) => {}
+    };
 }
