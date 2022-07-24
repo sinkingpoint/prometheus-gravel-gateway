@@ -67,10 +67,28 @@ impl GravelValue {
         const DEFAULT_PEBBLE_GRANULARITY: usize = 100;
         match clearmode {
             ClearMode::Sum(duration) => {
-                return GravelValue::Pebble(TimePebble::new(duration, DEFAULT_PEBBLE_GRANULARITY, sum_merge_strategy));
+                let mut pebble = TimePebble::new(duration, DEFAULT_PEBBLE_GRANULARITY, sum_merge_strategy);
+                if let GravelValue::Prometheus(prom) = self {
+                    match prom {
+                        PrometheusValue::Counter(counter) => pebble.append(counter.value.as_f64()),
+                        PrometheusValue::Gauge(gauge) => pebble.append(gauge.as_f64()),
+                        _ => {}
+                    };
+                }
+
+                return GravelValue::Pebble(pebble);
             },
             ClearMode::Mean(duration) => {
-                return GravelValue::Pebble(TimePebble::new(duration, DEFAULT_PEBBLE_GRANULARITY, mean_merge_strategy));
+                let mut pebble = TimePebble::new(duration, DEFAULT_PEBBLE_GRANULARITY, mean_merge_strategy);
+                if let GravelValue::Prometheus(prom) = self {
+                    match prom {
+                        PrometheusValue::Counter(counter) => pebble.append(counter.value.as_f64()),
+                        PrometheusValue::Gauge(gauge) => pebble.append(gauge.as_f64()),
+                        _ => {}
+                    };
+                }
+
+                return GravelValue::Pebble(pebble);
             }
             _ => return self
         }

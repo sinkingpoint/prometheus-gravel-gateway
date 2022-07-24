@@ -106,11 +106,11 @@ impl TimePebble {
         let (adjusted_time, window_offset) = self.select_bucket(timestamp);
         self.keep_consistent(adjusted_time, window_offset);
 
-        self.buckets[window_offset].weight += 1;
         self.buckets[window_offset].value = (self.merge)(&self.buckets[window_offset], &PebbleEntry {
             weight: 1,
             value,
         });
+        self.buckets[window_offset].weight += 1;
 
         self.last_bucket_time_nanos = adjusted_time;
         self.last_bucket_index = window_offset;
