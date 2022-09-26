@@ -1,7 +1,7 @@
 use std::{fs::File, io::{self, BufRead, BufReader}, path::PathBuf};
 
 pub trait Authenticator {
-    fn authenticate(&self, token: &str) -> bool;
+    fn authenticate(&self, token: &str) -> Result<bool, anyhow::Error>;
 }
 
 #[cfg(feature="auth")]
@@ -29,20 +29,38 @@ impl BasicAuthenticator {
 
 #[cfg(feature="auth")]
 impl Authenticator for BasicAuthenticator {
-    fn authenticate(&self, header: &str) -> bool {
+    fn authenticate(&self, header: &str) -> Result<bool, anyhow::Error> {
         use bcrypt::verify;
         // Header is in the format "Basic <token>", so here we extract the second bit
         match header.split_ascii_whitespace().nth(1) {
             Some(token) => {
-                for hash in self.allowed_hashes.iter() {
-                    return verify(token, hash).unwrap_or(false)
+                let token: Option<String> = match base64::decode(token) {
+                    Ok(token_bytes) => {
+                        match String::from_utf8(token_bytes) {
+                            // If we have a valid utc-8 base64 auth, split it on the : (format is username:password), and take the second 
+                            // part (i.e. just take the password).
+                            Ok(token_str) if token_str.contains(':') => token_str.split(':').nth(1).map_or(None, |s| Some(s.to_owned())),
+
+                            // If we fail do decode it as a valid utf-8 basic auth header, for whatever reason, treat it as plain text
+                            Ok(token_str) => Some(token_str),
+                            Err(_) => Some(token.to_owned())
+                        }
+                    },
+
+                    // For backwards compatibility reasons, if we fail to base64 decode the header then we
+                    // still accept it as plain text
+                    Err(_) => Some(token.to_owned())
+                };
+
+                if let Some(token) = token {
+                    for hash in self.allowed_hashes.iter() {
+                        return Ok(verify(token, hash).unwrap_or(false))
+                    }
                 }
 
-                return false
+                Ok(false)
             }
-            None => {
-                return false
-            }
+            None => Ok(false)
         }
     }
 }
@@ -59,7 +77,7 @@ pub fn pass_through_auth() -> PassThroughAuthenticator {
 }
 
 impl Authenticator for PassThroughAuthenticator {
-    fn authenticate(&self, _: &str) -> bool {
-        true
+    fn authenticate(&self, _: &str) -> Result<bool, anyhow::Error> {
+        Ok(true)
     }
 }

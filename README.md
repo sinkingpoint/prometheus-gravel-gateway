@@ -147,10 +147,8 @@ gravel-gateway --basic-auth-file ./passwords
 Requests to the POST /metrics endpoint will then be rejected unless they contain a valid `Authorization` header:
 
 ```
-curl http://localhost:4278/metrics -vvv --data-binary @metrics.txt -H "Authorization: Basic supersecrets"
+curl http://localhost:4278/metrics -vvv --data-binary @metrics.txt -u :supersecrets
 ```
-
-You'll note that we don't base64 the authorization header, so it's not _technically_ Basic Auth, but I don't like Base64ing it because I believe that gives a false sense of security. Instead, you should enable TLS
 
 ### TLS
 
@@ -179,6 +177,7 @@ This means that we actually get an "aggregate of aggregates" out the other end, 
 You can start a pebble using a clearmode in the form `<aggregation><time>` e.g. `{clearmode="mean5m"}` will take a mean over the last 5 minutes of incoming data. Available aggregations at the moment include "sum" and "mean", but "median" is coming soon, and maybe "percentile" would be a good PR.
 
 ## Motivation
+
 I [recently wrote](https://blog.sinkingpoint.com/posts/prometheus-for-faas/) about my frustrations with trying to orchestrate Prometheus in an FAAS (Functions-As-A-Service) system that will rename nameless.
 My key frustration was that the number of semantics I was trying to extract from my Prometheus metrics was too much for the limited amount of data you can 
 ship with them. In particular, there was three semantics I was trying to drive:

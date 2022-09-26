@@ -23,7 +23,7 @@ pub struct RoutesConfig {
 }
 
 async fn auth(config: Arc<RoutesConfig>, header: String) -> Result<(), warp::Rejection> {
-    if config.authenticator.authenticate(&header) {
+    if let Ok(true) = config.authenticator.authenticate(&header) {
         return Ok(());
     }
 

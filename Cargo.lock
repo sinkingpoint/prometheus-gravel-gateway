@@ -12,6 +12,12 @@ dependencies = [
 ]
 
 [[package]]
+name = "anyhow"
+version = "1.0.65"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "98161a4e3e2184da77bb14f02184cdd111e83bbbcc9979dfee3c44b9a85f5602"
+
+[[package]]
 name = "async-trait"
 version = "0.1.53"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -456,8 +462,10 @@ dependencies = [
 
 [[package]]
 name = "gravel-gateway"
-version = "1.5.1"
+version = "1.5.2"
 dependencies = [
+ "anyhow",
+ "base64",
  "bcrypt",
  "clap",
  "futures",
