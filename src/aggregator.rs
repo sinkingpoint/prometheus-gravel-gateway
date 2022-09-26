@@ -19,6 +19,15 @@ impl From<ParseError> for AggregationError {
     }
 }
 
+impl AggregationError {
+    pub fn to_string(&self) -> String{
+        match self {
+            AggregationError::ParseError(err) => err.to_string(),
+            AggregationError::Error(err) => err.to_owned(),
+        }
+    }
+}
+
 #[derive(Debug, Clone, PartialEq)]
 pub enum ClearMode {
     Aggregate,

@@ -1,5 +1,6 @@
-use std::{collections::HashMap, sync::Arc};
+use std::{collections::HashMap, sync::Arc, convert::Infallible};
 
+use reqwest::StatusCode;
 use warp::{Filter, http::HeaderValue, hyper::{HeaderMap, body::Bytes}, path::Tail, reject::Reject};
 
 use crate::{aggregator::{AggregationError, Aggregator}, auth::Authenticator};
@@ -30,7 +31,7 @@ async fn auth(config: Arc<RoutesConfig>, header: String) -> Result<(), warp::Rej
     return Err(warp::reject::custom(GravelError::AuthError));
 }
 
-pub fn get_routes(aggregator: Aggregator, config: RoutesConfig) -> impl Filter<Extract = impl warp::Reply, Error = warp::Rejection> + Clone {
+pub fn get_routes(aggregator: Aggregator, config: RoutesConfig) -> impl Filter<Extract = impl warp::Reply, Error = Infallible> + Clone {
     let default_auth = warp::any().map(|| {
         return String::new();
     });
@@ -58,7 +59,17 @@ pub fn get_routes(aggregator: Aggregator, config: RoutesConfig) -> impl Filter<E
         .and_then(get_metrics)
         .with(warp::reply::with::headers(get_metrics_headers));
 
-    return push_metrics_path.or(get_metrics_path);
+    return push_metrics_path.or(get_metrics_path).recover(handle_rejection);
+}
+
+async fn handle_rejection(err: warp::Rejection) -> Result<impl warp::Reply, std::convert::Infallible> {
+    let gravel_error: Option<&GravelError> = err.find();
+    match gravel_error {
+        Some(GravelError::AuthError) => Ok(warp::reply::with_status(String::from("FORBIDDEN"), StatusCode::FORBIDDEN)),
+        Some(GravelError::AggregationError(err)) => Ok(warp::reply::with_status(err.to_string(), StatusCode::BAD_REQUEST)),
+        Some(GravelError::Error(err)) => Ok(warp::reply::with_status(err.clone(), StatusCode::BAD_REQUEST)),
+        None => Ok(warp::reply::with_status(String::from("INTERNAL_SERVER_ERROR"), StatusCode::INTERNAL_SERVER_ERROR)),
+    }
 }
 
 fn with_aggregator(
@@ -73,6 +84,7 @@ fn with_config(
     warp::any().map(move || Arc::clone(&conf))
 }
 
+#[cfg(feature="clustering")]
 async fn forward_to_peer(peer: &str, data: Bytes, url_tail: Tail) -> Result<(), GravelError> {
     let client = reqwest::Client::new();
     return match client.post(peer.to_owned() + "/" + url_tail.as_str()).body(data).send().await {
