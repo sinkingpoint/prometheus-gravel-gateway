@@ -199,7 +199,7 @@ fn merge_buckets(val1: &Vec<HistogramBucket>, val2: &Vec<HistogramBucket>) -> Ve
 }
 
 /// Merges two metrics into one another (using the given clearmode), storing the result in the first one.
-pub fn merge_metric(into: &mut Sample<GravelValue>, merge: Sample<GravelValue>, clear_mode: ClearMode) {
+pub fn merge_metric(into: &mut Sample<GravelValue>, merge: Sample<GravelValue>, clear_mode: ClearMode) -> Result<(), AggregationError> {
     match (&mut into.value, &merge.value) {
         (GravelValue::Prometheus(PrometheusValue::Unknown(val1)), GravelValue::Prometheus(PrometheusValue::Unknown(val2))) => {
             match clear_mode {
@@ -260,9 +260,11 @@ pub fn merge_metric(into: &mut Sample<GravelValue>, merge: Sample<GravelValue>, 
                 _ => {}
             }
         },
-        (GravelValue::Prometheus(PrometheusValue::Summary(_)), GravelValue::Prometheus(PrometheusValue::Summary(_))) => todo!(),
+        (GravelValue::Prometheus(PrometheusValue::Summary(_)), GravelValue::Prometheus(PrometheusValue::Summary(_))) => return Err(AggregationError::Error("cannot merge summaries".to_string())),
         _ => unreachable!(),
     };
+
+    Ok(())
 }
 
 impl AggregationFamily {
@@ -322,7 +324,7 @@ impl AggregationFamily {
                     },
                     Some(s) => {
                         // Otherwise we have to merge
-                        merge_metric(s, metric, clear_mode);
+                        merge_metric(s, metric, clear_mode)?;
                     }
                 }
             }

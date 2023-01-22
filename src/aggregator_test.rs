@@ -22,7 +22,7 @@ fn test_clear_mode_replace() {
     let mut sample = Sample::new(vec![], None, GravelValue::Prometheus(PrometheusValue::Gauge(MetricNumber::Int(1))));
     merge_metric(&mut sample, 
                 Sample::new(vec![], None, GravelValue::Prometheus(PrometheusValue::Gauge(MetricNumber::Int(2)))),
-                      ClearMode::Replace);
+                      ClearMode::Replace).unwrap();
 
     assert_eq!(sample.value, GravelValue::Prometheus(PrometheusValue::Gauge(MetricNumber::Int(2))));
 
@@ -43,7 +43,7 @@ fn test_clear_mode_replace() {
                         }),
                     }
                 ))),
-                ClearMode::Replace);
+                ClearMode::Replace).unwrap();
 
     assert_eq!(sample.value, GravelValue::Prometheus(PrometheusValue::Counter(PrometheusCounterValue{
         value: MetricNumber::Int(1000),
@@ -70,7 +70,7 @@ fn test_clear_mode_replace() {
                         exemplar: None
                     }
                 ))),
-                ClearMode::Replace);
+                ClearMode::Replace).unwrap();
 
     assert_eq!(sample.value, GravelValue::Prometheus(PrometheusValue::Counter(PrometheusCounterValue{
         value: MetricNumber::Int(1000),
@@ -83,7 +83,7 @@ fn test_clear_mode_aggregate() {
     let mut sample = Sample::new(vec![], None, GravelValue::Prometheus(PrometheusValue::Gauge(MetricNumber::Int(1))));
     merge_metric(&mut sample, 
                 Sample::new(vec![], None, GravelValue::Prometheus(PrometheusValue::Gauge(MetricNumber::Int(2)))),
-                      ClearMode::Aggregate);
+                      ClearMode::Aggregate).unwrap();
 
     assert_eq!(sample.value, GravelValue::Prometheus(PrometheusValue::Gauge(MetricNumber::Int(3))));
 
@@ -104,7 +104,7 @@ fn test_clear_mode_aggregate() {
                         }),
                     }
                 ))),
-                ClearMode::Aggregate);
+                ClearMode::Aggregate).unwrap();
 
     assert_eq!(sample.value, GravelValue::Prometheus(PrometheusValue::Counter(PrometheusCounterValue{
         value: MetricNumber::Int(1001),
@@ -131,7 +131,7 @@ fn test_clear_mode_aggregate() {
                         exemplar: None
                     }
                 ))),
-                ClearMode::Aggregate);
+                ClearMode::Aggregate).unwrap();
 
     assert_eq!(sample.value, GravelValue::Prometheus(PrometheusValue::Counter(PrometheusCounterValue{
         value: MetricNumber::Int(1001),
