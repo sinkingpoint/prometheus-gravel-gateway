@@ -15,6 +15,11 @@ spec:
     matchNames:
       - {{ .Release.Namespace }}
   selector:
+    matchExpressions:
+      - key: prometheus.io/service-monitor
+        operator: NotIn
+        values:
+          - "false"
     matchLabels:
       {{- include "prometheus-gravel-gateway.selectorLabels" . | nindent 6 }}
 {{- end }}

@@ -20,6 +20,7 @@ metadata:
   name: {{ include "prometheus-gravel-gateway.fullname" . }}-headless
   labels:
     {{- include "prometheus-gravel-gateway.labels" . | nindent 4 }}
+    prometheus.io/service-monitor: "false"
 spec:
   clusterIP: None
   publishNotReadyAddresses: true
