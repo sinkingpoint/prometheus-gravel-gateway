@@ -309,6 +309,11 @@ impl AggregationFamily {
             self.base_family = new_family.without_label(CLEARMODE_LABEL_NAME).unwrap_or(new_family);
         }
         else {
+            if !are_label_names_equivalent(self.base_family.get_label_names(), new_family.get_label_names()) {
+                // The new push has different label names - abort.
+                return Err(AggregationError::Error("invalid push - new push has different label names than the existing family".to_string()))
+            }
+
             for metric in new_family.into_iter_samples() {
                 // TODO: This is really inefficient for large families. Should probably optimise it
                 // Go uses "label fingerprinting" to generate hashes of labelsets.
@@ -363,6 +368,16 @@ fn are_label_names_equivalent(existing: &[String], new: &[String]) -> bool {
         }
     }
 
+    for existing_label in existing.iter() {
+        if existing_label == CLEARMODE_LABEL_NAME {
+            continue
+        }
+
+        if !new.contains(existing_label) {
+            return false;
+        }
+    }
+
     return true;
 }
 
@@ -382,11 +397,7 @@ impl Aggregator {
         for (name, metrics) in metrics.families {
             match families.get_mut(&name) {
                 Some(f) => {
-                    if !are_label_names_equivalent(f.base_family.get_label_names(), metrics.get_label_names()) {
-                        // The new push has different label names - abort
-                        return Err(AggregationError::Error("invalid push - new push has different label names than the existing family".to_string()))
-                    }
-                    // If we have the family already, merge this new stuff into it
+                    // If we have the family already, merge this new stuff into it.
                     f.merge(metrics)?;
                 }
                 None => {

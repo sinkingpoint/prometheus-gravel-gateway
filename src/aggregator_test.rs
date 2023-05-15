@@ -152,6 +152,32 @@ async fn test_push_with_different_label_names() {
 }
 
 #[tokio::test]
+async fn test_clear_mode_family() {
+    let mut agg = Aggregator::new();
+    agg.parse_and_merge("requests_num_total{foo=\"bar\"} 1\n", &HashMap::new()).await.unwrap();
+    agg.parse_and_merge("requests_num_total{foo=\"baz\",clearmode=\"family\"} 1\n", &HashMap::new()).await.unwrap();
+    
+    let output = agg.to_string().await;
+    assert_eq!(output, "requests_num_total{foo=\"baz\"} 1\n");
+}
+
+#[tokio::test]
+async fn test_clear_mode_family_change_labels() {
+    let mut agg = Aggregator::new();
+    agg.parse_and_merge("requests_num_total{foo=\"bar\"} 1\n", &HashMap::new()).await.unwrap();
+
+    // Remove the foo label and make sure we can still push.
+    agg.parse_and_merge("requests_num_total{clearmode=\"family\"} 1\n", &HashMap::new()).await.unwrap();
+    let output = agg.to_string().await;
+    assert_eq!(output, "requests_num_total 1\n");
+
+    // Add the foo label back in and make sure we can still push.
+    agg.parse_and_merge("requests_num_total{foo=\"bar\",clearmode=\"family\"} 1\n", &HashMap::new()).await.unwrap();
+    let output = agg.to_string().await;
+    assert_eq!(output, "requests_num_total{foo=\"bar\"} 1\n");
+}
+
+#[tokio::test]
 async fn test_17() {
     let mut agg = Aggregator::new();
     let result = agg.parse_and_merge("# HELP metric_without_values_total This metric does not always have values
