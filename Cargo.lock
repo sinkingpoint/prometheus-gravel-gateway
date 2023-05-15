@@ -910,9 +910,9 @@ checksum = "624a8340c38c1b80fd549087862da4ba43e08858af025b236e509b6649fc13d5"
 
 [[package]]
 name = "openmetrics-parser"
-version = "0.4.0"
+version = "0.4.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "5caf1ccaaf43651cc5abda77353a173869d8d8b0238f2faacb23d6b32931e860"
+checksum = "a57e332d7ded0280100426138926fe4ca24ad139a644b8e79f6347fa2d842228"
 dependencies = [
  "auto_ops",
  "pest",

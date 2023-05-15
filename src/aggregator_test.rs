@@ -150,3 +150,19 @@ async fn test_push_with_different_label_names() {
     assert!(agg.parse_and_merge("requests_num_total2{clearmode=\"mean5m\"} 1\n", &HashMap::new()).await.is_ok(), "failed to add metric with clearmode");
     assert!(agg.parse_and_merge("requests_num_total2{clearmode=\"mean5m\"} 1\n", &HashMap::new()).await.is_ok(), "failed to add second metric with clearmode");
 }
+
+#[tokio::test]
+async fn test_17() {
+    let mut agg = Aggregator::new();
+    let result = agg.parse_and_merge("# HELP metric_without_values_total This metric does not always have values
+# TYPE metric_without_values_total counter
+# HELP metric_with_values_total This metric will always have values
+# TYPE metric_with_values_total counter
+metric_with_values_total{a_label=\"label_value\",another_label=\"a_value\"} 1.0
+# HELP metric_with_values_created This metric will always have values
+# TYPE metric_with_values_created gauge
+metric_with_values_created{a_label=\"label_value\",another_label=\"a_value\"} 1.665577650707084e+09
+", &HashMap::new()).await;
+
+    assert!(result.is_ok(), "failed to parse valid metric: {:?}", result.err());
+}
