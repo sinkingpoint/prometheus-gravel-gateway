@@ -6,9 +6,7 @@ metadata:
     {{- include "prometheus-gravel-gateway.labels" . | nindent 4 }}
 spec:
   serviceName: {{ include "prometheus-gravel-gateway.fullname" . }}-headless
-  {{- if not .Values.autoscaling.enabled }}
   replicas: {{ .Values.replicaCount }}
-  {{- end }}
   podManagementPolicy: {{ .Values.podManagementPolicy }}
   selector:
     matchLabels:
