@@ -228,3 +228,19 @@ number_of_transactions_total{label=\"value\"} 1
 
     assert!(result.is_ok(), "failed to parse valid metric: {:?}", result.err());
 }
+
+#[tokio::test]
+async fn test_openmetrics_parser_2() {
+    // https://github.com/sinkingpoint/openmetrics-parser/issues/2
+
+    let mut agg = Aggregator::new();
+    let result = agg.parse_and_merge("example_test_counter_total{foo=\"bar\"} 0
+", &HashMap::new()).await;
+
+    assert!(result.is_ok(), "failed to parse valid metric: {:?}", result.err());
+
+    let result = agg.parse_and_merge("example_test_counter_total{foo=\"bar\"} 0.01
+", &HashMap::new()).await;
+
+    assert!(result.is_ok(), "failed to parse valid metric: {:?}", result.err());
+}
