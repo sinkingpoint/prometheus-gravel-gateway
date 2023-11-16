@@ -179,6 +179,8 @@ async fn test_clear_mode_family_change_labels() {
 
 #[tokio::test]
 async fn test_17() {
+    // https://github.com/sinkingpoint/prometheus-gravel-gateway/issues/17
+
     let mut agg = Aggregator::new();
     let result = agg.parse_and_merge("# HELP metric_without_values_total This metric does not always have values
 # TYPE metric_without_values_total counter
@@ -188,6 +190,40 @@ metric_with_values_total{a_label=\"label_value\",another_label=\"a_value\"} 1.0
 # HELP metric_with_values_created This metric will always have values
 # TYPE metric_with_values_created gauge
 metric_with_values_created{a_label=\"label_value\",another_label=\"a_value\"} 1.665577650707084e+09
+", &HashMap::new()).await;
+
+    assert!(result.is_ok(), "failed to parse valid metric: {:?}", result.err());
+}
+
+#[tokio::test]
+async fn test_29() {
+    // https://github.com/sinkingpoint/prometheus-gravel-gateway/issues/29
+
+    // Test push with metrics, followed by an empty push.
+    let mut agg = Aggregator::new();
+    let result = agg.parse_and_merge("# HELP number_of_transactions_total Number of transactions
+# TYPE number_of_transactions_total counter
+number_of_transactions_total{label=\"value\"} 1
+", &HashMap::new()).await;
+
+    assert!(result.is_ok(), "failed to parse valid metric: {:?}", result.err());
+
+    let result = agg.parse_and_merge("# HELP number_of_transactions_total Number of transactions
+# TYPE number_of_transactions_total counter
+", &HashMap::new()).await;
+    assert!(result.is_ok(), "failed to parse valid metric: {:?}", result.err());
+
+    // Test an empty push, followed by a push with metrics.
+    let mut agg = Aggregator::new();
+
+    let result = agg.parse_and_merge("# HELP number_of_transactions_total Number of transactions
+# TYPE number_of_transactions_total counter
+", &HashMap::new()).await;
+    assert!(result.is_ok(), "failed to parse valid metric: {:?}", result.err());
+
+    let result = agg.parse_and_merge("# HELP number_of_transactions_total Number of transactions
+# TYPE number_of_transactions_total counter
+number_of_transactions_total{label=\"value\"} 1
 ", &HashMap::new()).await;
 
     assert!(result.is_ok(), "failed to parse valid metric: {:?}", result.err());
