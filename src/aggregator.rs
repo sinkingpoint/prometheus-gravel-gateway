@@ -300,12 +300,20 @@ impl AggregationFamily {
             )));
         }
 
+        // Sometimes, either the family we set previously, or the family we're now merging with now only contain
+        // a #TYPE and #HELP line, but no actual metric values.
+        let new_is_empty = !new_family.iter_samples().any(|_| { true });
+        let old_is_empty = !self.base_family.iter_samples().any(|_| { true });
+
         // We should clear the whole family if any of the samples has a clearmode="family" label
         let should_clear_family = new_family.iter_samples().any(|metric| {
             ClearMode::from_family(new_family.family_type.clone(), metric) == ClearMode::Family
         });
 
-        if should_clear_family {
+        if new_is_empty {
+            return Ok(())
+        }
+        else if old_is_empty || should_clear_family {
             self.base_family = new_family.without_label(CLEARMODE_LABEL_NAME).unwrap_or(new_family);
         }
         else {
