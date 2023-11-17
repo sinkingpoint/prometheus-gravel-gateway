@@ -15,6 +15,8 @@ mod clustering;
 
 #[cfg(test)]
 mod aggregator_test;
+#[cfg(test)]
+mod routes_test;
 mod auth;
 
 use tokio::signal;

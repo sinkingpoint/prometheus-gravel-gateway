@@ -29,6 +29,7 @@ reqwest = { optional = true, version="0.11.10" }
 twox-hash = { optional = true, version = "1.6.3" }
 base64 = "0.13"
 anyhow = "1.0"
+urlencoding = "2.1.3"
 
 [features]
 default = ["tls", "auth", "clustering"]

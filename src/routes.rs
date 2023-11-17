@@ -1,6 +1,7 @@
 use std::{collections::HashMap, sync::Arc, convert::Infallible};
 
 use reqwest::StatusCode;
+use urlencoding::decode;
 use warp::{Filter, http::HeaderValue, hyper::{HeaderMap, body::Bytes}, path::Tail, reject::Reject};
 
 use crate::{aggregator::{AggregationError, Aggregator}, auth::Authenticator};
@@ -68,7 +69,7 @@ async fn handle_rejection(err: warp::Rejection) -> Result<impl warp::Reply, std:
         Some(GravelError::AuthError) => Ok(warp::reply::with_status(String::from("FORBIDDEN"), StatusCode::FORBIDDEN)),
         Some(GravelError::AggregationError(err)) => Ok(warp::reply::with_status(err.to_string(), StatusCode::BAD_REQUEST)),
         Some(GravelError::Error(err)) => Ok(warp::reply::with_status(err.clone(), StatusCode::BAD_REQUEST)),
-        None => Ok(warp::reply::with_status(String::from("INTERNAL_SERVER_ERROR"), StatusCode::INTERNAL_SERVER_ERROR)),
+        None => Ok(warp::reply::with_status(String::new(), StatusCode::NOT_FOUND)),
     }
 }
 
@@ -111,13 +112,24 @@ async fn ingest_metrics<T>(
 ) -> Result<impl warp::Reply, warp::Rejection> {
     let labels = {
         let mut labelset = HashMap::new();
-        let mut labels = url_tail.as_str().split("/").peekable();
+        let mut labels = url_tail.as_str().split("/").map(|s| decode(s)).peekable();
         while labels.peek().is_some() {
-            let name = labels.next().unwrap();
+            let label_name = labels.next().unwrap();
+            let name = match label_name {
+                Ok(s) => s.into_owned(),
+                Err(_) => return Err(warp::reject::custom(GravelError::Error("Invalid label name".into())))
+            };
+
             if name.is_empty() {
                 break;
             }
-            let value = labels.next().unwrap_or_default();
+
+            let value = match labels.next() {
+                Some(Ok(s)) => s.into_owned(),
+                Some(Err(_)) => return Err(warp::reject::custom(GravelError::Error("Invalid label value".into()))),
+                None => return Err(warp::reject::custom(GravelError::Error("Label value missing".into())))
+            };
+
             labelset.insert(name, value);
         }
         labelset
@@ -125,8 +137,8 @@ async fn ingest_metrics<T>(
 
     // We're clustering, so might need to forward the metrics
     if let Some(cluster_conf) = conf.cluster_conf.as_ref() {
-        let job = labels.get("job").unwrap_or(&"");
-        if let Some(peer) = cluster_conf.get_peer_for_key(job) {
+        let job = labels.get("job").map(|s| s.to_owned()).unwrap_or(String::new());
+        if let Some(peer) = cluster_conf.get_peer_for_key(&job) {
             if !cluster_conf.is_self(peer) {
                 match forward_to_peer(peer, data, url_tail).await {
                     Ok(_) => return Ok(""),
@@ -143,7 +155,12 @@ async fn ingest_metrics<T>(
         }
     };
 
-    match agg.parse_and_merge(&body, &labels).await {
+    let mut str_labels = HashMap::new();
+    for (k, v) in labels.iter() {
+        str_labels.insert(k.as_str(), v.as_str());
+    }
+
+    match agg.parse_and_merge(&body, &str_labels).await {
         Ok(_) => Ok(""),
         Err(e) => Err(warp::reject::custom(GravelError::AggregationError(e))),
     }
